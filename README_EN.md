@@ -8,6 +8,7 @@ A Tampermonkey userscript that uses AI to generate intelligent replies for X (Tw
 - Multiple AI providers: OpenAI, Anthropic Claude, Google Gemini
 - Custom API endpoint support (compatible with proxies)
 - Generate multiple reply candidates at once
+- Real-time execution log showing generation progress
 
 ### 🖼️ Image Understanding
 - Auto-extract images from tweets
@@ -37,9 +38,14 @@ A Tampermonkey userscript that uses AI to generate intelligent replies for X (Tw
 
 ### 📜 History
 - Three-tab layout: Settings | Results | History
-- Auto-save generated replies per tweet
+- Auto-save generated replies per tweet (with translations)
 - View history when reopening panel
 - Up to 50 tweet records cached
+
+### 💫 UI Experience
+- Gradient button design
+- Animated loading effects
+- Real-time execution log panel
 
 ## 📦 Installation
 
@@ -64,7 +70,8 @@ A Tampermonkey userscript that uses AI to generate intelligent replies for X (Tw
    - (Optional) Click "📊 Analyze Comments"
    - Select reply strategy
 4. Click "✨ Generate Replies"
-5. Select a reply to auto-fill into the reply box
+5. Watch execution log for progress
+6. Select a reply to auto-fill into the reply box
 
 ## 📄 License
 

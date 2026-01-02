@@ -897,7 +897,10 @@
                     </div>
                 </div>
                 
-                <button class="x-ai-inline-generate" style="width: 100%; padding: 10px; background: #1d9bf0; color: #fff; border: none; border-radius: 9999px; font-size: 14px; font-weight: 600; cursor: pointer;">✨ 生成回复</button>
+                <button class="x-ai-inline-generate" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #1d9bf0, #1a8cd8); color: #fff; border: none; border-radius: 9999px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s; box-shadow: 0 2px 8px rgba(29, 155, 240, 0.3);">✨ 生成回复</button>
+                
+                <!-- 执行日志 -->
+                <div class="x-ai-gen-log" style="display: none; margin-top: 10px; padding: 10px; background: #0d0d0d; border: 1px solid #222; border-radius: 8px; font-family: 'SF Mono', Monaco, monospace; font-size: 10px; max-height: 120px; overflow-y: auto;"></div>
             </div>
             
             <!-- Results Tab Content -->
@@ -941,12 +944,20 @@
         const cached = getCachedReplies(tweetText);
         if (cached && cached.replies && cached.replies.length > 0) {
             historyEmpty.style.display = 'none';
-            historyList.innerHTML = cached.replies.map((r, i) => `
-                <div class="x-ai-reply-card" data-index="${i}" data-reply="${encodeURIComponent(r)}" style="padding: 10px; background: #111; border: 1px solid #333; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s;">
-                    <div style="font-size: 11px; color: #888; margin-bottom: 4px;">历史 ${i + 1}</div>
-                    <div class="x-ai-reply-original" style="font-size: 13px; line-height: 1.4; color: #e7e9ea;">${r}</div>
-                </div>
-            `).join('');
+            historyList.innerHTML = cached.replies.map((r, i) => {
+                // Support both old format (string) and new format (object)
+                const replyText = typeof r === 'string' ? r : r.reply;
+                const translationText = typeof r === 'string' ? null : r.translation;
+                const hasTranslation = translationText && !containsChinese(replyText);
+
+                return `
+                    <div class="x-ai-reply-card" data-index="${i}" data-reply="${encodeURIComponent(replyText)}" style="padding: 10px; background: #111; border: 1px solid #333; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s;">
+                        <div style="font-size: 11px; color: #888; margin-bottom: 4px;">历史 ${i + 1}</div>
+                        <div class="x-ai-reply-original" style="font-size: 13px; line-height: 1.4; color: #e7e9ea;">${replyText}</div>
+                        ${hasTranslation ? `<div class="x-ai-reply-translation" style="font-size: 12px; line-height: 1.4; color: #888; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #333;"><span style="color: #1d9bf0;">📝 中文:</span> ${translationText}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
             // Add hover and click handlers for history items
             historyList.querySelectorAll('.x-ai-reply-card').forEach(card => {
                 card.onmouseenter = () => { card.style.borderColor = '#1d9bf0'; card.style.background = '#1a1a1a'; };
@@ -1119,6 +1130,16 @@
             }
         };
 
+        // Generation execution log
+        const genLogDiv = panel.querySelector('.x-ai-gen-log');
+        const addGenLog = (msg, type = 'info') => {
+            const colors = { info: '#888', success: '#4ade80', error: '#f87171', warn: '#fbbf24', action: '#1d9bf0' };
+            const icons = { info: '○', success: '✓', error: '✗', warn: '⚠', action: '▸' };
+            const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            genLogDiv.innerHTML += `<div style="color: ${colors[type] || colors.info}; margin-bottom: 2px;"><span style="opacity: 0.5;">[${time}]</span> ${icons[type] || '○'} ${msg}</div>`;
+            genLogDiv.scrollTop = genLogDiv.scrollHeight;
+        };
+
         async function doGenerate() {
             const style = getChipValue('style') || 'engage';
             const lang = langSelect.value || 'auto';
@@ -1126,14 +1147,27 @@
             const length = getChipValue('length') || 'medium';
             const strategy = getChipValue('strategy') || 'default';
 
+            // Show and clear log
+            genLogDiv.innerHTML = '';
+            genLogDiv.style.display = 'block';
+
             generateBtn.disabled = true;
+            generateBtn.style.background = 'linear-gradient(135deg, #444, #333)';
             generateBtn.innerHTML = '<div class="x-ai-spinner" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></div>生成中...';
 
             // Clear previous results
             replyList.innerHTML = '';
             resultsDiv.style.display = 'none';
 
+            addGenLog('开始生成回复...', 'action');
+            addGenLog(`配置: ${count}条 | ${length}长度 | ${style}风格`, 'info');
+
+            if (tweetImages.length > 0) {
+                addGenLog(`检测到 ${tweetImages.length} 张图片，将使用视觉模型`, 'info');
+            }
+
             try {
+                addGenLog(`调用 AI API (${config.provider}/${config.model})...`, 'action');
                 const replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages);
 
                 if (replies && replies.length > 0) {
@@ -1166,8 +1200,8 @@
                         `;
                     }).join('');
 
-                    // Save to cache (save only reply texts)
-                    saveCachedReplies(tweetText, replies.map(r => typeof r === 'string' ? r : r.reply));
+                    // Save to cache (save full reply objects with translations)
+                    saveCachedReplies(tweetText, replies.map(r => typeof r === 'string' ? { reply: r, translation: null } : r));
 
                     // Add hover and click handlers
                     replyList.querySelectorAll('.x-ai-reply-card').forEach(card => {
@@ -1194,13 +1228,17 @@
                             }
                         };
                     });
+
+                    addGenLog(`成功生成 ${replies.length} 条回复`, 'success');
                 }
             } catch (error) {
                 console.error(error);
+                addGenLog(`生成失败: ${error}`, 'error');
                 replyList.innerHTML = `<div style="color: #ff4444; padding: 10px; font-size: 12px;">生成失败: ${error}</div>`;
                 resultsDiv.style.display = 'block';
             } finally {
                 generateBtn.disabled = false;
+                generateBtn.style.background = 'linear-gradient(135deg, #1d9bf0, #1a8cd8)';
                 generateBtn.innerHTML = '✨ 生成回复';
             }
         }
@@ -1646,15 +1684,52 @@
             retries++;
         }
 
-        if (editor) {
-            editor.focus();
-            // Try to simply set text if execCommand is flaky, but execCommand is best for DraftJS
-            document.execCommand('insertText', false, text);
-            // Dispatch input event just in case
-            editor.dispatchEvent(new Event('input', { bubbles: true }));
-            return true;
+        if (!editor) {
+            console.error('Editor not found');
+            return false;
         }
-        return false;
+
+        // Focus the editor
+        editor.focus();
+        await new Promise(r => setTimeout(r, 100));
+
+        // Method 1: Try execCommand first (works best with DraftJS)
+        const success = document.execCommand('insertText', false, text);
+
+        if (!success || editor.innerText.trim().length === 0) {
+            // Method 2: Use clipboard API as fallback
+            try {
+                // Store original clipboard content
+                const originalClipboard = await navigator.clipboard.readText().catch(() => '');
+
+                // Write text to clipboard
+                await navigator.clipboard.writeText(text);
+
+                // Paste it
+                document.execCommand('paste');
+
+                // Restore original clipboard after a delay
+                setTimeout(async () => {
+                    if (originalClipboard) {
+                        await navigator.clipboard.writeText(originalClipboard).catch(() => { });
+                    }
+                }, 100);
+            } catch (e) {
+                // Method 3: Direct text manipulation (last resort)
+                const editableDiv = editor.querySelector('[contenteditable="true"]') || editor;
+                if (editableDiv) {
+                    editableDiv.textContent = text;
+                    editableDiv.dispatchEvent(new Event('input', { bubbles: true }));
+                    editableDiv.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+        }
+
+        // Dispatch events to ensure React/DraftJS picks up the change
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        editor.dispatchEvent(new Event('change', { bubbles: true }));
+
+        return true;
     }
 
     // 4. Click Send and record for learning
