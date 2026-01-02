@@ -9,31 +9,37 @@ A Tampermonkey userscript that uses AI to generate intelligent replies for X (Tw
 - Custom API endpoint support (compatible with proxies)
 - Generate multiple reply candidates at once
 
+### 🖼️ Image Understanding
+- Auto-extract images from tweets
+- Vision model support (GPT-4o, Claude 3, Gemini)
+- Generate context-aware replies based on images
+- Auto-fallback to text-only if vision not supported
+
 ### ⚙️ Flexible Configuration
 - **Reply Count**: 1/2/3/5 replies
 - **Reply Length**: Short/Medium/Long
 - **Reply Style**: Engaging, Humorous, Professional, Sharp, Warm
 - **Reply Strategy**: Default, Agree, New Perspective, Balanced, Challenge
 - **Language**: Auto-detect, Chinese, English, Japanese, Korean
-- Custom style and strategy support with add/delete
+- Custom style and strategy with add/delete
+- Settings persistence across sessions
 
 ### 📊 Comment Analysis
-- Scrape top replies from tweet comment section
+- Scrape top replies from tweet comments
 - AI analysis of main viewpoints and sentiment
+- Real-time log display during analysis
 - Generate context-aware replies based on discussion
 
-### 🌐 Auto Translation
-- Auto-detect non-Chinese replies and translate
-- Parallel translation for fast results
+### 🌐 Smart Translation
+- Non-Chinese replies include Chinese translation
+- Translation generated with reply (no extra API call)
+- Chinese is for reading only; original text is sent
 
 ### 📜 History
+- Three-tab layout: Settings | Results | History
 - Auto-save generated replies per tweet
 - View history when reopening panel
 - Up to 50 tweet records cached
-
-### 💾 Settings Persistence
-- Remember last used settings
-- Learn from user edits to improve style
 
 ## 📦 Installation
 
@@ -46,7 +52,7 @@ A Tampermonkey userscript that uses AI to generate intelligent replies for X (Tw
 1. Click "⚙️ AI Reply Settings" in Tampermonkey menu
 2. Select AI provider (OpenAI/Anthropic/Gemini)
 3. Enter API key
-4. Choose model
+4. Choose model (vision-capable models like GPT-4o recommended)
 5. Save settings
 
 ## 🎯 Usage

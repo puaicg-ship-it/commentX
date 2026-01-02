@@ -214,6 +214,50 @@
         return textElement ? textElement.innerText : "";
     }
 
+    function getTweetImages(articleElement) {
+        const images = [];
+        // Find tweet photos
+        const photoContainer = articleElement.querySelector('div[data-testid="tweetPhoto"]');
+        if (photoContainer) {
+            const imgs = photoContainer.querySelectorAll('img');
+            imgs.forEach(img => {
+                const src = img.src;
+                // Filter out profile pics and small images, get actual tweet images
+                if (src && src.includes('pbs.twimg.com/media')) {
+                    // Get higher quality version
+                    const highQualitySrc = src.replace(/&name=\w+/, '&name=medium');
+                    images.push(highQualitySrc);
+                }
+            });
+        }
+        // Also check for card images
+        const cardImg = articleElement.querySelector('div[data-testid="card.wrapper"] img');
+        if (cardImg && cardImg.src && cardImg.src.includes('pbs.twimg.com')) {
+            images.push(cardImg.src);
+        }
+        return images.slice(0, 4); // Max 4 images
+    }
+
+    // Convert image URL to base64 (for Anthropic)
+    async function imageUrlToBase64(url) {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                responseType: 'blob',
+                onload: function (response) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = reader.result.split(',')[1];
+                        resolve(base64);
+                    };
+                    reader.readAsDataURL(response.response);
+                },
+                onerror: () => resolve(null)
+            });
+        });
+    }
+
     // --- UI Utilities ---
     // ... Settings Modal code remains same ... (omitted for brevity in this tool call if I could, but wait, I need to be careful with replace)
     // Actually, I should use replace_file_content on specific blocks or just overwrite the file if I want to be safe and clean.
@@ -757,7 +801,9 @@
         }
 
         const tweetText = getTweetText(article);
-        if (!tweetText) {
+        const tweetImages = getTweetImages(article);
+
+        if (!tweetText && tweetImages.length === 0) {
             showError(article, '无法获取推文内容');
             return;
         }
@@ -1088,7 +1134,7 @@
             resultsDiv.style.display = 'none';
 
             try {
-                const replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult);
+                const replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages);
 
                 if (replies && replies.length > 0) {
                     // Hide empty state, show results
@@ -1105,40 +1151,23 @@
                         c.style.display = c.dataset.tab === 'results' ? 'block' : 'none';
                     });
 
-                    // Render cards first, then asynchronously add translations
-                    replyList.innerHTML = replies.map((r, i) => `
-                        <div class="x-ai-reply-card" data-index="${i}" data-reply="${encodeURIComponent(r)}" style="padding: 10px; background: #111; border: 1px solid #333; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s;">
-                            <div style="font-size: 11px; color: #888; margin-bottom: 4px;">回复 ${i + 1}</div>
-                            <div class="x-ai-reply-original" style="font-size: 13px; line-height: 1.4; color: #e7e9ea;">${r}</div>
-                            <div class="x-ai-reply-translation" style="display: none; font-size: 12px; line-height: 1.4; color: #888; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #333;"></div>
-                        </div>
-                    `).join('');
+                    // Render cards with inline translations (replies are now objects with {reply, translation})
+                    replyList.innerHTML = replies.map((r, i) => {
+                        const replyText = typeof r === 'string' ? r : r.reply;
+                        const translationText = typeof r === 'string' ? null : r.translation;
+                        const hasTranslation = translationText && !containsChinese(replyText);
 
-                    // Save to cache
-                    saveCachedReplies(tweetText, replies);
+                        return `
+                            <div class="x-ai-reply-card" data-index="${i}" data-reply="${encodeURIComponent(replyText)}" style="padding: 10px; background: #111; border: 1px solid #333; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s;">
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px;">回复 ${i + 1}</div>
+                                <div class="x-ai-reply-original" style="font-size: 13px; line-height: 1.4; color: #e7e9ea;">${replyText}</div>
+                                ${hasTranslation ? `<div class="x-ai-reply-translation" style="font-size: 12px; line-height: 1.4; color: #888; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #333;"><span style="color: #1d9bf0;">📝 中文:</span> ${translationText}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('');
 
-                    // Check and add translations for non-Chinese replies (parallel)
-                    const cards = replyList.querySelectorAll('.x-ai-reply-card');
-                    const translationPromises = Array.from(cards).map(async (card) => {
-                        const originalText = decodeURIComponent(card.dataset.reply);
-                        if (!containsChinese(originalText)) {
-                            const translationDiv = card.querySelector('.x-ai-reply-translation');
-                            translationDiv.innerHTML = '<span style="color: #666;">🔄 翻译中...</span>';
-                            translationDiv.style.display = 'block';
-
-                            try {
-                                const translation = await translateToChinese(originalText);
-                                if (translation) {
-                                    translationDiv.innerHTML = `<span style="color: #1d9bf0;">📝 中文:</span> ${translation}`;
-                                } else {
-                                    translationDiv.style.display = 'none';
-                                }
-                            } catch (e) {
-                                translationDiv.innerHTML = '<span style="color: #f87171;">翻译失败</span>';
-                            }
-                        }
-                    });
-                    Promise.all(translationPromises);
+                    // Save to cache (save only reply texts)
+                    saveCachedReplies(tweetText, replies.map(r => typeof r === 'string' ? r : r.reply));
 
                     // Add hover and click handlers
                     replyList.querySelectorAll('.x-ai-reply-card').forEach(card => {
@@ -1180,8 +1209,8 @@
         regenerateBtn.onclick = doGenerate;
     }
 
-    // Multi-reply generation
-    async function generateMultipleReplies(tweetContent, style, lang, count, length = 'medium', strategy = 'default', analysisResult = null) {
+    // Multi-reply generation with optional image support
+    async function generateMultipleReplies(tweetContent, style, lang, count, length = 'medium', strategy = 'default', analysisResult = null, images = []) {
         if (!config.apiKey) {
             throw new Error('请先在设置中配置 API Key');
         }
@@ -1230,16 +1259,23 @@
             }
         }
 
+        const hasImages = images && images.length > 0;
+        const imageNote = hasImages ? '\n注意：推文包含图片，请结合图片内容生成回复。' : '';
+
+        // Request translation if not Chinese
+        const needsTranslation = lang !== 'zh';
+        const translationNote = needsTranslation ? '\n如果回复语言不是中文，请在每条回复后附加中文翻译，格式为：\n回复内容\n[翻译] 中文翻译' : '';
+
         const promptSystem = `你是一个社交媒体高手，擅长写出吸引人的回复。
 风格要求：${styleMap[style] || styleMap.engage}
 语言要求：${langMap[lang] || langMap.auto}
 字数要求：${lengthMap[length] || lengthMap.medium}
 回复策略：${strategyMap[strategy] || strategyMap.default}
-回复不要像机器人，要有个性和真实感。${learnedPatterns}${analysisContext}`;
+回复不要像机器人，要有个性和真实感。${learnedPatterns}${analysisContext}${imageNote}${translationNote}`;
 
         const promptUser = `请为以下推文生成 ${count} 条不同的回复，每条回复用 --- 分隔：
 
-推文内容：${tweetContent}
+推文内容：${tweetContent || '[无文字，请根据图片内容回复]'}
 
 请直接给出 ${count} 条回复，用 --- 分隔：`;
 
@@ -1248,35 +1284,89 @@
         let requestData = {};
         let headers = { "Content-Type": "application/json" };
 
-        if (config.provider === 'anthropic') {
-            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
-            headers["x-api-key"] = config.apiKey;
-            headers["anthropic-version"] = "2023-06-01";
-            requestData = {
-                model: config.model,
-                max_tokens: 2048,
-                system: promptSystem,
-                messages: [{ role: "user", content: promptUser }]
-            };
-        } else if (config.provider === 'gemini') {
-            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-            requestData = {
-                contents: [{ parts: [{ text: promptSystem + "\n\n" + promptUser }] }]
-            };
-        } else {
-            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
-            headers["Authorization"] = `Bearer ${config.apiKey}`;
-            requestData = {
-                model: config.model,
-                messages: [
-                    { role: "system", content: promptSystem },
-                    { role: "user", content: promptUser }
-                ],
-                temperature: 0.8
-            };
-        }
+        // Try with images first, fallback to text-only if fails
+        const buildRequest = async (withImages) => {
+            if (config.provider === 'anthropic') {
+                url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
+                headers["x-api-key"] = config.apiKey;
+                headers["anthropic-version"] = "2023-06-01";
 
-        return new Promise((resolve, reject) => {
+                let userContent;
+                if (withImages && hasImages) {
+                    // Anthropic requires base64 images
+                    const imageContents = [];
+                    for (const imgUrl of images.slice(0, 2)) {
+                        const base64 = await imageUrlToBase64(imgUrl);
+                        if (base64) {
+                            imageContents.push({
+                                type: "image",
+                                source: { type: "base64", media_type: "image/jpeg", data: base64 }
+                            });
+                        }
+                    }
+                    userContent = [...imageContents, { type: "text", text: promptUser }];
+                } else {
+                    userContent = promptUser;
+                }
+
+                requestData = {
+                    model: config.model,
+                    max_tokens: 2048,
+                    system: promptSystem,
+                    messages: [{ role: "user", content: userContent }]
+                };
+            } else if (config.provider === 'gemini') {
+                url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+
+                const parts = [{ text: promptSystem + "\n\n" + promptUser }];
+                if (withImages && hasImages) {
+                    // Gemini supports inline image URLs via inlineData
+                    for (const imgUrl of images.slice(0, 2)) {
+                        const base64 = await imageUrlToBase64(imgUrl);
+                        if (base64) {
+                            parts.unshift({ inlineData: { mimeType: "image/jpeg", data: base64 } });
+                        }
+                    }
+                }
+
+                requestData = {
+                    contents: [{ parts }]
+                };
+            } else {
+                // OpenAI compatible
+                url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+                headers["Authorization"] = `Bearer ${config.apiKey}`;
+
+                let userContent;
+                if (withImages && hasImages) {
+                    // OpenAI Vision format
+                    userContent = [
+                        { type: "text", text: promptUser },
+                        ...images.slice(0, 2).map(imgUrl => ({
+                            type: "image_url",
+                            image_url: { url: imgUrl }
+                        }))
+                    ];
+                } else {
+                    userContent = promptUser;
+                }
+
+                requestData = {
+                    model: config.model,
+                    messages: [
+                        { role: "system", content: promptSystem },
+                        { role: "user", content: userContent }
+                    ],
+                    temperature: 0.8
+                };
+            }
+        };
+
+        // Try with images first
+        await buildRequest(hasImages);
+
+        // API call function that can be retried
+        const makeRequest = () => new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: "POST",
                 url: url,
@@ -1301,18 +1391,41 @@
                                 return;
                             }
 
-                            // Parse multiple replies
-                            const replies = content
+                            // Parse multiple replies with optional translations
+                            const rawReplies = content
                                 .split(/---+/)
                                 .map(r => r.trim())
-                                .filter(r => r.length > 0 && r.length < 500);
+                                .filter(r => r.length > 0 && r.length < 800);
+
+                            // Extract reply and translation from each
+                            const replies = rawReplies.map(raw => {
+                                const translationMatch = raw.match(/\[翻译\]\s*(.+?)$/s);
+                                if (translationMatch) {
+                                    const reply = raw.replace(/\[翻译\]\s*.+$/s, '').trim();
+                                    const translation = translationMatch[1].trim();
+                                    return { reply, translation };
+                                }
+                                return { reply: raw, translation: null };
+                            });
 
                             resolve(replies);
                         } catch (e) {
                             reject(`解析错误: ${e.message}`);
                         }
                     } else {
-                        reject(`HTTP ${response.status}: ${response.responseText.substring(0, 100)}`);
+                        // Check if error is related to images/vision not supported
+                        const errorText = response.responseText.toLowerCase();
+                        if (hasImages && (
+                            errorText.includes('image') ||
+                            errorText.includes('vision') ||
+                            errorText.includes('multimodal') ||
+                            errorText.includes('not supported') ||
+                            response.status === 400
+                        )) {
+                            reject({ retryWithoutImages: true, message: response.responseText });
+                        } else {
+                            reject(`HTTP ${response.status}: ${response.responseText.substring(0, 100)}`);
+                        }
                     }
                 },
                 onerror: function (err) {
@@ -1320,6 +1433,18 @@
                 }
             });
         });
+
+        // Try request, fallback to text-only if vision fails
+        try {
+            return await makeRequest();
+        } catch (error) {
+            if (error.retryWithoutImages) {
+                console.log('Vision not supported, retrying without images...');
+                await buildRequest(false);
+                return await makeRequest();
+            }
+            throw error;
+        }
     }
 
     // Check if text contains Chinese characters
