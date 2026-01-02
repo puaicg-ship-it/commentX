@@ -525,19 +525,19 @@
 
     // --- Default Styles and Strategies ---
     const DEFAULT_STYLES = [
-        { id: 'engage', name: '🔥 吸引关注' },
-        { id: 'humor', name: '😂 幽默搞笑' },
-        { id: 'pro', name: '💼 专业严谨' },
-        { id: 'sharp', name: '🗡️ 犀利毒舌' },
-        { id: 'warm', name: '💕 暖心治愈' }
+        { id: 'engage', name: '吸引关注' },
+        { id: 'humor', name: '幽默搞笑' },
+        { id: 'pro', name: '专业严谨' },
+        { id: 'sharp', name: '犀利毒舌' },
+        { id: 'warm', name: '暖心治愈' }
     ];
 
     const DEFAULT_STRATEGIES = [
         { id: 'default', name: '默认', desc: '自然回复' },
-        { id: 'agree', name: '🤝 同意', desc: '附和热门观点' },
-        { id: 'unique', name: '💡 新观点', desc: '提出独特视角' },
-        { id: 'balance', name: '⚖️ 平衡', desc: '客观分析' },
-        { id: 'challenge', name: '🔥 反驳', desc: '挑战主流' }
+        { id: 'agree', name: '同意', desc: '附和热门观点' },
+        { id: 'unique', name: '新观点', desc: '提出独特视角' },
+        { id: 'balance', name: '平衡', desc: '客观分析' },
+        { id: 'challenge', name: '反驳', desc: '挑战主流' }
     ];
 
     // Load custom items
@@ -582,6 +582,39 @@
     // For backward compatibility
     const REPLY_STYLES = getAllStyles();
     const REPLY_STRATEGIES = getAllStrategies();
+
+    // --- Reply Cache per Tweet ---
+    let replyCache = GM_getValue('replyCache', {});
+    const CACHE_MAX_TWEETS = 50;
+
+    function getTweetCacheKey(tweetText) {
+        // Simple hash from tweet text
+        let hash = 0;
+        for (let i = 0; i < Math.min(tweetText.length, 100); i++) {
+            hash = ((hash << 5) - hash) + tweetText.charCodeAt(i);
+            hash |= 0;
+        }
+        return 'tweet_' + hash;
+    }
+
+    function getCachedReplies(tweetText) {
+        const key = getTweetCacheKey(tweetText);
+        return replyCache[key] || null;
+    }
+
+    function saveCachedReplies(tweetText, replies) {
+        const key = getTweetCacheKey(tweetText);
+        replyCache[key] = { replies, timestamp: Date.now() };
+
+        // Limit cache size
+        const keys = Object.keys(replyCache);
+        if (keys.length > CACHE_MAX_TWEETS) {
+            // Remove oldest entries
+            const sorted = keys.sort((a, b) => (replyCache[a].timestamp || 0) - (replyCache[b].timestamp || 0));
+            sorted.slice(0, keys.length - CACHE_MAX_TWEETS).forEach(k => delete replyCache[k]);
+        }
+        GM_setValue('replyCache', replyCache);
+    }
 
     // --- Comment Scraping ---
     function scrapeReplies() {
@@ -762,6 +795,7 @@
             <div style="display: flex; border-bottom: 1px solid #333;">
                 <button class="x-ai-tab active" data-tab="settings" style="flex: 1; padding: 10px; background: transparent; border: none; color: #1d9bf0; font-size: 12px; font-weight: 600; cursor: pointer; border-bottom: 2px solid #1d9bf0;">⚙️ 设置</button>
                 <button class="x-ai-tab" data-tab="results" style="flex: 1; padding: 10px; background: transparent; border: none; color: #888; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent;">📋 结果</button>
+                <button class="x-ai-tab" data-tab="history" style="flex: 1; padding: 10px; background: transparent; border: none; color: #888; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent;">📜 历史</button>
             </div>
             
             <!-- Settings Tab Content -->
@@ -833,6 +867,14 @@
                     <div class="x-ai-inline-list" style="max-height: 250px; overflow-y: auto;"></div>
                 </div>
             </div>
+            
+            <!-- History Tab Content -->
+            <div class="x-ai-tab-content" data-tab="history" style="padding: 15px; display: none;">
+                <div class="x-ai-history-empty" style="text-align: center; padding: 20px; color: #666; font-size: 13px;">
+                    暂无历史记录
+                </div>
+                <div class="x-ai-history-list" style="max-height: 250px; overflow-y: auto;"></div>
+            </div>
         `;
         container.appendChild(panel);
 
@@ -846,6 +888,35 @@
         const tabs = panel.querySelectorAll('.x-ai-tab');
         const tabContents = panel.querySelectorAll('.x-ai-tab-content');
         const langSelect = panel.querySelector('.x-ai-lang-select');
+        const historyEmpty = panel.querySelector('.x-ai-history-empty');
+        const historyList = panel.querySelector('.x-ai-history-list');
+
+        // Load cached replies for this tweet into History tab
+        const cached = getCachedReplies(tweetText);
+        if (cached && cached.replies && cached.replies.length > 0) {
+            historyEmpty.style.display = 'none';
+            historyList.innerHTML = cached.replies.map((r, i) => `
+                <div class="x-ai-reply-card" data-index="${i}" data-reply="${encodeURIComponent(r)}" style="padding: 10px; background: #111; border: 1px solid #333; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s;">
+                    <div style="font-size: 11px; color: #888; margin-bottom: 4px;">历史 ${i + 1}</div>
+                    <div class="x-ai-reply-original" style="font-size: 13px; line-height: 1.4; color: #e7e9ea;">${r}</div>
+                </div>
+            `).join('');
+            // Add hover and click handlers for history items
+            historyList.querySelectorAll('.x-ai-reply-card').forEach(card => {
+                card.onmouseenter = () => { card.style.borderColor = '#1d9bf0'; card.style.background = '#1a1a1a'; };
+                card.onmouseleave = () => { card.style.borderColor = '#333'; card.style.background = '#111'; };
+                card.onclick = async () => {
+                    const selectedReply = decodeURIComponent(card.dataset.reply);
+                    const replyBtn = article.querySelector('button[data-testid="reply"]');
+                    if (replyBtn) {
+                        replyBtn.click();
+                        await new Promise(r => setTimeout(r, 500));
+                        await insertTextIntoEditor(selectedReply);
+                        window._pendingReply = { original: selectedReply, tweetContext: tweetText };
+                    }
+                };
+            });
+        }
 
         // Tab switching
         tabs.forEach(tab => {
@@ -1043,9 +1114,12 @@
                         </div>
                     `).join('');
 
-                    // Check and add translations for non-Chinese replies
+                    // Save to cache
+                    saveCachedReplies(tweetText, replies);
+
+                    // Check and add translations for non-Chinese replies (parallel)
                     const cards = replyList.querySelectorAll('.x-ai-reply-card');
-                    for (const card of cards) {
+                    const translationPromises = Array.from(cards).map(async (card) => {
                         const originalText = decodeURIComponent(card.dataset.reply);
                         if (!containsChinese(originalText)) {
                             const translationDiv = card.querySelector('.x-ai-reply-translation');
@@ -1063,7 +1137,8 @@
                                 translationDiv.innerHTML = '<span style="color: #f87171;">翻译失败</span>';
                             }
                         }
-                    }
+                    });
+                    Promise.all(translationPromises);
 
                     // Add hover and click handlers
                     replyList.querySelectorAll('.x-ai-reply-card').forEach(card => {
