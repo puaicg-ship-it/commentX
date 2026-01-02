@@ -27,44 +27,111 @@
 
     let config = { ...DEFAULT_CONFIG, ...GM_getValue('config', {}) };
 
+    // --- Channel Management ---
+    function getSavedChannels() {
+        return GM_getValue('savedChannels', []);
+    }
+
+    function getActiveChannelId() {
+        return GM_getValue('activeChannelId', null);
+    }
+
+    function saveChannel(channel) {
+        const channels = getSavedChannels();
+        const existingIndex = channels.findIndex(c => c.id === channel.id);
+        if (existingIndex >= 0) {
+            channels[existingIndex] = channel;
+        } else {
+            channels.push(channel);
+        }
+        GM_setValue('savedChannels', channels);
+        return channel;
+    }
+
+    function deleteChannel(id) {
+        const channels = getSavedChannels().filter(c => c.id !== id);
+        GM_setValue('savedChannels', channels);
+        // If deleted active channel, clear it
+        if (getActiveChannelId() === id) {
+            GM_setValue('activeChannelId', null);
+        }
+    }
+
+    function setActiveChannel(id) {
+        GM_setValue('activeChannelId', id);
+        const channels = getSavedChannels();
+        const channel = channels.find(c => c.id === id);
+        if (channel) {
+            config = { ...DEFAULT_CONFIG, ...channel };
+            GM_setValue('config', config);
+        }
+    }
+
+    function generateChannelId() {
+        return 'channel_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+
     // --- Icons ---
     const ROBOT_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true" class="r-4qtqp9 r-yyyyoo r-dnmrzs r-bnwqim r-1plcrui r-lrvibr r-1xvli5t r-1hdv0qi"><g><path d="M12 2a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v2.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5V17a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 .5-.5V6a2 2 0 0 1 2-2h2V4a2 2 0 0 1 2-2zm0 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm-3.5-1a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" fill="currentColor"></path></g></svg>`;
 
     // --- Model Lists per Provider ---
     const PROVIDER_MODELS = {
         openai: [
-            // GPT Series (Latest)
             "gpt-5.2",
             "gpt-5.2-codex",
             "gpt-5.1",
             "gpt-5",
+            "gpt-5-codex",
+            "gpt-5-codex-high",
+            "gpt-5-codex-medium-medium",
+            "gpt-5.1-codex",
             "gpt-4.1",
             "gpt-4.1-mini",
-            "gpt-4.1-nano",
             "gpt-4o"
         ],
         anthropic: [
-            // Claude 4.5 Series
-            "claude-sonnet-4-5",
-            "claude-sonnet-4-5-thinking",
-            "claude-opus-4-5-thinking",
-            // Claude 3.5 Series
+            "claude-sonnet-4-5-20250929",
+            "claude-opus-4-5-20251101",
+            "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-20250514",
+            "claude-opus-4-1-20250805",
+            "claude-3-7-sonnet-20250219",
             "claude-3-5-sonnet-20241022",
             "claude-3-5-haiku-20241022"
         ],
         gemini: [
-            // Gemini 3 Series
+            "gemini-3-pro-preview",
             "gemini-3-flash",
             "gemini-3-pro-high",
             "gemini-3-pro-low",
-            "gemini-3-pro-image",
-            // Gemini 2.5 Series
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-pro",
-            "gemini-2.5-flash-thinking",
+            "gemini-2.5-pro"
         ]
     };
+
+    // Unified model list for simplified UI
+    const ALL_MODELS = [
+        // Claude Series
+        "claude-sonnet-4-5-20250929",
+        "claude-opus-4-5-20251101",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-haiku-20241022",
+        // GPT Series
+        "gpt-5",
+        "gpt-5-codex",
+        "gpt-5-codex-high",
+        "gpt-5.1-codex",
+        "gpt-4o",
+        "gpt-4.1",
+        // Gemini Series
+        "gemini-3-pro-preview",
+        "gemini-2.5-pro"
+    ];
 
     // --- UI Utilities ---
     function createSettingsModal() {
@@ -102,16 +169,36 @@
             return options;
         }
 
+        // Build channel options
+        function buildChannelOptions() {
+            const channels = getSavedChannels();
+            const activeId = getActiveChannelId();
+            if (channels.length === 0) {
+                return '<option value="">-- 无保存渠道 --</option>';
+            }
+            return channels.map(c =>
+                `<option value="${c.id}" ${c.id === activeId ? 'selected' : ''}>${c.name} (${c.provider})</option>`
+            ).join('');
+        }
+
         modal.innerHTML = `
             <h2 style="margin-top: 0; margin-bottom: 20px; font-size: 20px;">AI Reply Settings</h2>
             
-            <label style="display:block; margin-bottom: 5px;">Provider Protocol</label>
-            <select id="ai-provider" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
-                <option value="openai" ${config.provider === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
-                <option value="anthropic" ${config.provider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
-                <option value="gemini" ${config.provider === 'gemini' ? 'selected' : ''}>Google Gemini</option>
-            </select>
-
+            <!-- Channel Management -->
+            <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <label style="font-size: 12px; color: #888; margin: 0;">📡 渠道</label>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <select id="ai-channel-select" style="flex: 1; padding: 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-size: 12px;">
+                        ${buildChannelOptions()}
+                    </select>
+                    <button id="ai-channel-add" style="padding: 8px 12px; background: #1d9bf0; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">+ 新建</button>
+                    <button id="ai-channel-delete" style="padding: 8px 12px; background: #333; color: #888; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 12px;">🗑️</button>
+                </div>
+                <input type="text" id="ai-channel-name" placeholder="渠道名称 (可选)" value="${getSavedChannels().find(c => c.id === getActiveChannelId())?.name || ''}" style="width: 100%; padding: 8px; margin-top: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-size: 12px;">
+            </div>
+            
             <label style="display:block; margin-bottom: 5px;">API Base URL <span style="color:#888;font-size:11px;">(不含 /v1 后缀)</span></label>
             <input type="text" id="ai-api-url" value="${config.apiBaseUrl}" placeholder="如: https://api.openai.com" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
 
@@ -120,9 +207,13 @@
 
             <label style="display:block; margin-bottom: 5px;">Model</label>
             <select id="ai-model-select" style="width: 100%; padding: 8px; margin-bottom: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
-                ${buildModelOptions(config.provider, config.model)}
+                ${ALL_MODELS.map(m => `<option value="${m}" ${m === config.model ? 'selected' : ''}>${m}</option>`).join('')}
+                <option value="__custom__" ${!ALL_MODELS.includes(config.model) && config.model ? 'selected' : ''}>自定义模型...</option>
             </select>
-            <input type="text" id="ai-model-custom" value="${config.model}" placeholder="输入自定义模型名称" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; display: none;">
+            <input type="text" id="ai-model-custom" value="${config.model}" placeholder="输入自定义模型名称" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; display: ${!ALL_MODELS.includes(config.model) && config.model ? 'block' : 'none'};">
+            
+            <!-- Hidden provider field for compatibility -->
+            <input type="hidden" id="ai-provider" value="${config.provider || 'openai'}">
 
             <label style="display:block; margin-bottom: 5px;">Persona / Style <span style="color:#888;font-size:11px;">(回复风格)</span></label>
             <textarea id="ai-persona" rows="3" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">${config.persona}</textarea>
@@ -145,6 +236,58 @@
         `;
 
         document.body.appendChild(modal);
+
+        // Channel management handlers
+        const channelSelect = document.getElementById('ai-channel-select');
+        const channelNameInput = document.getElementById('ai-channel-name');
+        const channelAddBtn = document.getElementById('ai-channel-add');
+        const channelDeleteBtn = document.getElementById('ai-channel-delete');
+
+        // Switch channel
+        channelSelect.onchange = () => {
+            const channelId = channelSelect.value;
+            if (channelId) {
+                setActiveChannel(channelId);
+                // Reload modal to show new config
+                modal.remove();
+                createSettingsModal();
+            }
+        };
+
+        // Add new channel
+        channelAddBtn.onclick = () => {
+            const name = channelNameInput.value.trim() || '新渠道 ' + (getSavedChannels().length + 1);
+            const newChannel = {
+                id: generateChannelId(),
+                name: name,
+                provider: document.getElementById('ai-provider').value,
+                apiBaseUrl: document.getElementById('ai-api-url').value,
+                apiKey: document.getElementById('ai-api-key').value,
+                model: document.getElementById('ai-model-custom').value || document.getElementById('ai-model-select').value
+            };
+            saveChannel(newChannel);
+            setActiveChannel(newChannel.id);
+            // Reload modal
+            modal.remove();
+            createSettingsModal();
+            alert(`渠道 "${name}" 已创建！`);
+        };
+
+        // Delete current channel
+        channelDeleteBtn.onclick = () => {
+            const channelId = channelSelect.value;
+            if (!channelId) {
+                alert('没有选择渠道');
+                return;
+            }
+            const channel = getSavedChannels().find(c => c.id === channelId);
+            if (confirm(`确定要删除渠道 "${channel?.name}" 吗？`)) {
+                deleteChannel(channelId);
+                // Reload modal
+                modal.remove();
+                createSettingsModal();
+            }
+        };
 
         const providerSelect = document.getElementById('ai-provider');
         const modelSelect = document.getElementById('ai-model-select');
@@ -193,10 +336,35 @@
             config.apiKey = document.getElementById('ai-api-key').value;
             // Get model from custom input if custom selected, otherwise from dropdown
             config.model = modelSelect.value === '__custom__' ? modelCustom.value : modelSelect.value;
+
+            // Auto-detect provider from model name
+            if (config.model.includes('claude')) {
+                config.provider = 'anthropic';
+            } else if (config.model.includes('gemini')) {
+                config.provider = 'gemini';
+            } else {
+                config.provider = 'openai';
+            }
+
             config.persona = document.getElementById('ai-persona').value;
             config.autoSend = document.getElementById('ai-autosend').checked;
 
             GM_setValue('config', config);
+
+            // Also update active channel if one is selected
+            const activeId = getActiveChannelId();
+            if (activeId) {
+                const updatedChannel = {
+                    id: activeId,
+                    name: channelNameInput.value.trim() || getSavedChannels().find(c => c.id === activeId)?.name || '未命名',
+                    provider: config.provider,
+                    apiBaseUrl: config.apiBaseUrl,
+                    apiKey: config.apiKey,
+                    model: config.model
+                };
+                saveChannel(updatedChannel);
+            }
+
             modal.remove();
             alert('设置已保存!');
         };
@@ -294,6 +462,10 @@
             }
             @keyframes x-ai-spin {
                 to { transform: rotate(360deg); }
+            }
+            @keyframes x-ai-blink {
+                0%, 50% { opacity: 1; }
+                51%, 100% { opacity: 0; }
             }
             /* Options Panel */
             .x-ai-panel {
@@ -736,8 +908,7 @@
             requestData = {
                 model: config.model,
                 max_tokens: 200,
-                system: promptSystem,
-                messages: [{ role: "user", content: promptUser }]
+                messages: [{ role: "user", content: promptSystem + "\n\n---\n\n" + promptUser }]
             };
         } else if (config.provider === 'gemini') {
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
@@ -830,6 +1001,10 @@
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #333;">
                 <span style="font-size: 14px; font-weight: 600; color: #e7e9ea;">🤖 AI 智能回复</span>
                 <div style="display: flex; align-items: center; gap: 8px;">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 10px; color: #666;">
+                        <input type="checkbox" class="x-ai-stream-toggle" ${genSettings.stream ? 'checked' : ''} style="width: 12px; height: 12px; cursor: pointer;">
+                        <span>流式</span>
+                    </label>
                     <select class="x-ai-lang-select" style="padding: 4px 8px; background: #222; border: 1px solid #444; color: #888; border-radius: 6px; font-size: 11px; cursor: pointer;">
                         ${REPLY_LANGUAGES.map(l => `<option value="${l.id}"${genSettings.lang === l.id ? ' selected' : ''}>${l.name}</option>`).join('')}
                     </select>
@@ -1054,6 +1229,12 @@
             saveGenSettings({ lang: langSelect.value });
         };
 
+        // Stream toggle save
+        const streamToggle = panel.querySelector('.x-ai-stream-toggle');
+        streamToggle.onchange = () => {
+            saveGenSettings({ stream: streamToggle.checked });
+        };
+
         // Helper to get active chip value
         const getChipValue = (option) => {
             const active = panel.querySelector(`.x-ai-chips[data-option="${option}"] .x-ai-chip.active`);
@@ -1166,9 +1347,51 @@
                 addGenLog(`检测到 ${tweetImages.length} 张图片，将使用视觉模型`, 'info');
             }
 
-            try {
+            // Show preview area
+            resultsEmpty.style.display = 'none';
+            resultsDiv.style.display = 'block';
+
+            const useStream = streamToggle.checked;
+            let replies;
+
+            if (useStream) {
+                // Streaming mode
+                replyList.innerHTML = '<div class="x-ai-stream-preview" style="padding: 15px; background: #111; border: 1px solid #333; border-radius: 8px; font-size: 13px; line-height: 1.6; color: #e7e9ea; white-space: pre-wrap;"><span class="x-ai-stream-cursor" style="animation: x-ai-blink 1s infinite;">▊</span></div>';
+                const streamPreview = replyList.querySelector('.x-ai-stream-preview');
+
+                try {
+                    addGenLog(`调用 AI API (${config.provider}/${config.model}) 流式传输...`, 'action');
+                    addGenLog(`API Base: ${config.apiBaseUrl}`, 'info');
+                    // Build URL for logging
+                    let logUrl = config.provider === 'anthropic'
+                        ? `${config.apiBaseUrl}/v1/messages`
+                        : config.provider === 'gemini'
+                            ? `${config.apiBaseUrl}/v1beta/models/${config.model}:...`
+                            : `${config.apiBaseUrl}/v1/chat/completions`;
+                    addGenLog(`完整 URL: ${logUrl}`, 'info');
+
+                    replies = await generateMultipleRepliesStream(
+                        tweetText, style, lang, count, length, strategy, analysisResult, tweetImages,
+                        (content) => {
+                            streamPreview.innerHTML = content.replace(/\n/g, '<br>') + '<span class="x-ai-stream-cursor" style="background: #1d9bf0; animation: x-ai-blink 1s infinite;">▊</span>';
+                            streamPreview.scrollTop = streamPreview.scrollHeight;
+                        }
+                    );
+                } catch (streamError) {
+                    addGenLog(`流式传输失败: ${streamError}`, 'error');
+                    addGenLog(`切换到普通模式...`, 'warn');
+                    streamPreview.innerHTML = '<span style="color: #888;">正在使用普通模式生成...</span>';
+                    replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages);
+                }
+            } else {
+                // Normal mode
+                replyList.innerHTML = '<div style="padding: 15px; text-align: center; color: #888;"><div class="x-ai-spinner" style="display: inline-block; margin-bottom: 8px;"></div><div>正在生成...</div></div>';
                 addGenLog(`调用 AI API (${config.provider}/${config.model})...`, 'action');
-                const replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages);
+                addGenLog(`API 地址: ${config.apiBaseUrl}`, 'info');
+                replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages);
+            }
+
+            try {
 
                 if (replies && replies.length > 0) {
                     // Hide empty state, show results
@@ -1234,7 +1457,12 @@
             } catch (error) {
                 console.error(error);
                 addGenLog(`生成失败: ${error}`, 'error');
-                replyList.innerHTML = `<div style="color: #ff4444; padding: 10px; font-size: 12px;">生成失败: ${error}</div>`;
+                replyList.innerHTML = `
+                    <div style="padding: 15px; text-align: center;">
+                        <div style="color: #ff4444; font-size: 13px; margin-bottom: 12px;">❌ ${error}</div>
+                        <button class="x-ai-retry-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #1d9bf0, #1a8cd8); color: #fff; border: none; border-radius: 20px; font-size: 12px; cursor: pointer;">🔄 重试</button>
+                    </div>`;
+                replyList.querySelector('.x-ai-retry-btn').onclick = doGenerate;
                 resultsDiv.style.display = 'block';
             } finally {
                 generateBtn.disabled = false;
@@ -1347,11 +1575,13 @@
                     userContent = promptUser;
                 }
 
+                // Note: Some proxies don't support 'system' field, so we prepend it to user message
+                const fullUserMessage = promptSystem + "\n\n---\n\n" + (typeof userContent === 'string' ? userContent : promptUser);
+
                 requestData = {
                     model: config.model,
                     max_tokens: 2048,
-                    system: promptSystem,
-                    messages: [{ role: "user", content: userContent }]
+                    messages: [{ role: "user", content: typeof userContent === 'string' ? fullUserMessage : userContent }]
                 };
             } else if (config.provider === 'gemini') {
                 url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
@@ -1485,6 +1715,177 @@
         }
     }
 
+    // Streaming generation with real-time updates
+    async function generateMultipleRepliesStream(tweetContent, style, lang, count, length, strategy, analysisResult, images, onProgress) {
+        if (!config.apiKey) {
+            throw new Error('请先在设置中配置 API Key');
+        }
+
+        const styleMap = {
+            engage: '吸引人注意，增加互动和曝光，让人想点赞转发',
+            humor: '幽默搞笑，轻松有趣',
+            pro: '专业严谨，有深度',
+            sharp: '犀利毒舌，观点独特',
+            warm: '暖心治愈，温暖鼓励'
+        };
+
+        const langMap = {
+            auto: '与原推文相同的语言',
+            zh: '中文',
+            en: 'English',
+            ja: '日本語',
+            ko: '한국어'
+        };
+
+        const lengthMap = {
+            short: '简短精炼，不超过30字',
+            medium: '适中长度，30-80字',
+            long: '详细一些，80-150字'
+        };
+
+        const strategyMap = {
+            default: '自然回复，根据推文内容自由发挥',
+            agree: '赞同评论区的主流观点，表达共鸣和支持',
+            unique: '提出独特的新观点或新角度，吸引关注',
+            balance: '客观分析，提供平衡的多角度看法',
+            challenge: '提出不同意见，友善地挑战主流观点'
+        };
+
+        let analysisContext = '';
+        if (analysisResult) {
+            if (analysisResult.summary) {
+                analysisContext = `\n\n评论区热评总结：${analysisResult.summary}`;
+            }
+        }
+
+        const hasImages = images && images.length > 0;
+        const imageNote = hasImages ? '\n注意：推文包含图片，请结合图片内容生成回复。' : '';
+        const needsTranslation = lang !== 'zh';
+        const translationNote = needsTranslation ? '\n如果回复语言不是中文，请在每条回复后附加中文翻译，格式为：\n回复内容\n[翻译] 中文翻译' : '';
+
+        const promptSystem = `你是一个社交媒体高手，擅长写出吸引人的回复。
+风格要求：${styleMap[style] || styleMap.engage}
+语言要求：${langMap[lang] || langMap.auto}
+字数要求：${lengthMap[length] || lengthMap.medium}
+回复策略：${strategyMap[strategy] || strategyMap.default}
+回复不要像机器人，要有个性和真实感。${analysisContext}${imageNote}${translationNote}`;
+
+        const promptUser = `请为以下推文生成 ${count} 条不同的回复，每条回复用 --- 分隔：
+
+推文内容：${tweetContent || '[无文字，请根据图片内容回复]'}
+
+请直接给出 ${count} 条回复，用 --- 分隔：`;
+
+        let url = "";
+        let requestData = {};
+        let headers = { "Content-Type": "application/json" };
+
+        // Build request based on provider
+        if (config.provider === 'anthropic') {
+            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
+            headers["x-api-key"] = config.apiKey;
+            headers["anthropic-version"] = "2023-06-01";
+            requestData = {
+                model: config.model,
+                max_tokens: 2048,
+                stream: true,
+                messages: [{ role: "user", content: promptSystem + "\n\n---\n\n" + promptUser }]
+            };
+        } else if (config.provider === 'gemini') {
+            // Gemini uses different streaming endpoint
+            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:streamGenerateContent?alt=sse&key=${config.apiKey}`;
+            requestData = {
+                contents: [{ parts: [{ text: promptSystem + "\n\n" + promptUser }] }]
+            };
+        } else {
+            // OpenAI compatible
+            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+            headers["Authorization"] = `Bearer ${config.apiKey}`;
+            requestData = {
+                model: config.model,
+                messages: [
+                    { role: "system", content: promptSystem },
+                    { role: "user", content: promptUser }
+                ],
+                temperature: 0.8,
+                stream: true
+            };
+        }
+
+        return new Promise((resolve, reject) => {
+            let fullContent = '';
+            let lastProcessedLength = 0;
+
+            GM_xmlhttpRequest({
+                method: "POST",
+                url: url,
+                headers: headers,
+                data: JSON.stringify(requestData),
+                responseType: 'text',
+                onprogress: function (response) {
+                    const newText = response.responseText.substring(lastProcessedLength);
+                    lastProcessedLength = response.responseText.length;
+
+                    // Parse SSE chunks
+                    const lines = newText.split('\n');
+                    for (const line of lines) {
+                        if (!line.startsWith('data:')) continue;
+                        const jsonStr = line.substring(5).trim();
+                        if (jsonStr === '[DONE]') continue;
+
+                        try {
+                            const data = JSON.parse(jsonStr);
+                            let delta = '';
+
+                            if (config.provider === 'anthropic') {
+                                delta = data.delta?.text || '';
+                            } else if (config.provider === 'gemini') {
+                                delta = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                            } else {
+                                delta = data.choices?.[0]?.delta?.content || '';
+                            }
+
+                            if (delta) {
+                                fullContent += delta;
+                                if (onProgress) {
+                                    onProgress(fullContent);
+                                }
+                            }
+                        } catch (e) {
+                            // Ignore parse errors for incomplete chunks
+                        }
+                    }
+                },
+                onload: function (response) {
+                    if (response.status >= 200 && response.status < 300) {
+                        // Parse final content into replies
+                        const rawReplies = fullContent
+                            .split(/---+/)
+                            .map(r => r.trim())
+                            .filter(r => r.length > 0 && r.length < 800);
+
+                        const replies = rawReplies.map(raw => {
+                            const translationMatch = raw.match(/\[翻译\]\s*(.+?)$/s);
+                            if (translationMatch) {
+                                const reply = raw.replace(/\[翻译\]\s*.+$/s, '').trim();
+                                const translation = translationMatch[1].trim();
+                                return { reply, translation };
+                            }
+                            return { reply: raw, translation: null };
+                        });
+
+                        resolve(replies);
+                    } else {
+                        reject(`HTTP ${response.status}: ${response.responseText.substring(0, 100)}`);
+                    }
+                },
+                onerror: function (err) {
+                    reject('网络错误');
+                }
+            });
+        });
+    }
+
     // Check if text contains Chinese characters
     function containsChinese(text) {
         return /[\u4e00-\u9fff]/.test(text);
@@ -1510,8 +1911,7 @@
             requestData = {
                 model: config.model,
                 max_tokens: 500,
-                system: promptSystem,
-                messages: [{ role: "user", content: promptUser }]
+                messages: [{ role: "user", content: promptSystem + "\n\n---\n\n" + promptUser }]
             };
         } else if (config.provider === 'gemini') {
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
@@ -1590,8 +1990,7 @@
             requestData = {
                 model: config.model,
                 max_tokens: 1024,
-                system: promptSystem,
-                messages: [{ role: "user", content: promptUser }]
+                messages: [{ role: "user", content: promptSystem + "\n\n---\n\n" + promptUser }]
             };
         } else if (config.provider === 'gemini') {
             // Gemini API: baseUrl/v1beta/models/{model}:generateContent
