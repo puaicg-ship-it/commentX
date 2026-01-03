@@ -15,19 +15,31 @@
 (function () {
     'use strict';
 
-    // --- Configuration & State ---
+    /* =========================================================================
+     * MODULE 1: CONFIGURATION & CONSTANTS
+     * =========================================================================
+     * Default settings, API configuration, and global state
+     * ========================================================================= */
+
+    // --- Default Configuration ---
     const DEFAULT_CONFIG = {
-        provider: "openai", // 'openai', 'anthropic', 'gemini'
-        apiBaseUrl: "https://api.openai.com/v1",
+        requestFormat: "openai", // 'openai', 'anthropic', 'gemini'
+        apiBaseUrl: "https://api.openai.com",
         apiKey: "",
         model: "gpt-3.5-turbo",
+        modelList: [],
         persona: "幽默风趣",
         autoSend: false
     };
 
     let config = { ...DEFAULT_CONFIG, ...GM_getValue('config', {}) };
 
-    // --- Channel Management ---
+    /* =========================================================================
+     * MODULE 2: CHANNEL MANAGEMENT
+     * =========================================================================
+     * Save, load, delete, and switch between API channels
+     * ========================================================================= */
+
     function getSavedChannels() {
         return GM_getValue('savedChannels', []);
     }
@@ -71,24 +83,37 @@
         return 'channel_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
 
+    /* =========================================================================
+     * MODULE 3: MODEL CONFIGURATION
+     * =========================================================================
+     * Model lists, icons, and provider detection utilities
+     * ========================================================================= */
+
     // --- Icons ---
     const ROBOT_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true" class="r-4qtqp9 r-yyyyoo r-dnmrzs r-bnwqim r-1plcrui r-lrvibr r-1xvli5t r-1hdv0qi"><g><path d="M12 2a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v2.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5V17a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 .5-.5V6a2 2 0 0 1 2-2h2V4a2 2 0 0 1 2-2zm0 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm-3.5-1a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" fill="currentColor"></path></g></svg>`;
 
-    // --- Model Lists per Provider ---
-    const PROVIDER_MODELS = {
+    // --- Model Lists ---
+    // Local proxy models
+    const LOCAL_MODELS = {
         openai: [
-            "gpt-5.2",
-            "gpt-5.2-codex",
-            "gpt-5.1",
-            "gpt-5",
-            "gpt-5-codex",
-            "gpt-5-codex-high",
-            "gpt-5-codex-medium-medium",
-            "gpt-5.1-codex",
-            "gpt-4.1",
-            "gpt-4.1-mini",
-            "gpt-4o"
+            "gpt-4o",
+            "gpt-4-turbo",
+            "gpt-4",
+            "gpt-3.5-turbo"
         ],
+        anthropic: [
+            "claude-3-opus-20240229",
+            "claude-3-sonnet-20240229",
+            "claude-3-haiku-20240307"
+        ],
+        gemini: [
+            "gemini-pro",
+            "gemini-pro-vision"
+        ]
+    };
+
+    // Online API models (auto-detect provider from model name)
+    const ONLINE_MODELS = {
         anthropic: [
             "claude-sonnet-4-5-20250929",
             "claude-opus-4-5-20251101",
@@ -100,40 +125,57 @@
             "claude-3-5-sonnet-20241022",
             "claude-3-5-haiku-20241022"
         ],
+        openai: [
+            "gpt-5",
+            "gpt-5-codex",
+            "gpt-5-codex-high",
+            "gpt-5-codex-medium-medium",
+            "gpt-5.1-codex",
+            "gpt-4o"
+        ],
         gemini: [
-            "gemini-3-pro-preview",
-            "gemini-3-flash",
-            "gemini-3-pro-high",
-            "gemini-3-pro-low",
-            "gemini-2.5-flash",
-            "gemini-2.5-pro"
+            "gemini-3-pro-preview"
         ]
     };
 
-    // Unified model list for simplified UI
-    const ALL_MODELS = [
-        // Claude Series
-        "claude-sonnet-4-5-20250929",
-        "claude-opus-4-5-20251101",
-        "claude-haiku-4-5-20251001",
-        "claude-sonnet-4-20250514",
-        "claude-opus-4-20250514",
-        "claude-3-7-sonnet-20250219",
-        "claude-3-5-sonnet-20241022",
-        "claude-3-5-haiku-20241022",
-        // GPT Series
-        "gpt-5",
-        "gpt-5-codex",
-        "gpt-5-codex-high",
-        "gpt-5.1-codex",
-        "gpt-4o",
-        "gpt-4.1",
-        // Gemini Series
-        "gemini-3-pro-preview",
-        "gemini-2.5-pro"
+    // Flatten online models for dropdown
+    const ALL_ONLINE_MODELS = [
+        ...ONLINE_MODELS.anthropic,
+        ...ONLINE_MODELS.openai,
+        ...ONLINE_MODELS.gemini
     ];
 
-    // --- UI Utilities ---
+    // Auto-detect provider from model name (for saving config)
+    function detectProviderFromModel(model) {
+        if (!model) return 'openai';
+        const m = model.toLowerCase();
+        if (m.includes('claude')) return 'anthropic';
+        if (m.includes('gemini')) return 'gemini';
+        return 'openai';  // Default to OpenAI compatible
+    }
+
+    // Get request format based on model name
+    // All use standard API formats - proxy handles the CLI compatibility
+    function getRequestFormat(model) {
+        const m = (model || '').toLowerCase();
+        if (m.includes('claude')) {
+            return 'anthropic';  // /v1/messages
+        }
+        if (m.includes('gemini')) {
+            return 'gemini';  // /v1beta/models/...
+        }
+        return 'openai';  // /v1/chat/completions
+    }
+
+    // Keep PROVIDER_MODELS for backward compatibility
+    const PROVIDER_MODELS = LOCAL_MODELS;
+
+    /* =========================================================================
+     * MODULE 4: SETTINGS MODAL
+     * =========================================================================
+     * Configuration UI for channels, models, API keys, and preferences
+     * ========================================================================= */
+
     function createSettingsModal() {
         if (document.getElementById('x-ai-reply-settings')) return;
 
@@ -176,9 +218,10 @@
             if (channels.length === 0) {
                 return '<option value="">-- 无保存渠道 --</option>';
             }
-            return channels.map(c =>
-                `<option value="${c.id}" ${c.id === activeId ? 'selected' : ''}>${c.name} (${c.provider})</option>`
-            ).join('');
+            return channels.map(c => {
+                const typeIcon = c.channelType === 'local' ? '🖥️' : '☁️';
+                return `<option value="${c.id}" ${c.id === activeId ? 'selected' : ''}>${typeIcon} ${c.name}</option>`;
+            }).join('');
         }
 
         modal.innerHTML = `
@@ -205,15 +248,24 @@
             <label style="display:block; margin-bottom: 5px;">API Key</label>
             <input type="password" id="ai-api-key" value="${config.apiKey}" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
 
-            <label style="display:block; margin-bottom: 5px;">Model</label>
-            <select id="ai-model-select" style="width: 100%; padding: 8px; margin-bottom: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
-                ${ALL_MODELS.map(m => `<option value="${m}" ${m === config.model ? 'selected' : ''}>${m}</option>`).join('')}
-                <option value="__custom__" ${!ALL_MODELS.includes(config.model) && config.model ? 'selected' : ''}>自定义模型...</option>
+            <!-- Request Format Selector -->
+            <label style="display:block; margin-bottom: 5px;">请求格式 <span style="color:#888;font-size:11px;">(API 协议)</span></label>
+            <select id="ai-request-format" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
+                <option value="openai" ${config.requestFormat === 'openai' ? 'selected' : ''}>OpenAI (/v1/chat/completions)</option>
+                <option value="anthropic" ${config.requestFormat === 'anthropic' ? 'selected' : ''}>Anthropic (/v1/messages)</option>
+                <option value="gemini" ${config.requestFormat === 'gemini' ? 'selected' : ''}>Gemini (/v1beta/models/...)</option>
             </select>
-            <input type="text" id="ai-model-custom" value="${config.model}" placeholder="输入自定义模型名称" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; display: ${!ALL_MODELS.includes(config.model) && config.model ? 'block' : 'none'};">
-            
-            <!-- Hidden provider field for compatibility -->
-            <input type="hidden" id="ai-provider" value="${config.provider || 'openai'}">
+
+            <!-- Model List Editor -->
+            <label style="display:block; margin-bottom: 5px;">可用模型列表 <span style="color:#888;font-size:11px;">(一行一个)</span></label>
+            <textarea id="ai-model-list" rows="4" style="width: 100%; padding: 8px; margin-bottom: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-family: monospace; font-size: 11px;">${(config.modelList || []).join('\n')}</textarea>
+
+            <!-- Model selector -->
+            <label style="display:block; margin-bottom: 5px;">当前模型</label>
+            <select id="ai-model-select" style="width: 100%; padding: 8px; margin-bottom: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
+                ${(config.modelList || ALL_ONLINE_MODELS).map(m => `<option value="${m}" ${m === config.model ? 'selected' : ''}>${m}</option>`).join('') + '<option value="__custom__">自定义模型...</option>'}
+            </select>
+            <input type="text" id="ai-model-custom" value="${config.model}" placeholder="输入自定义模型名称" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; display: none;">
 
             <label style="display:block; margin-bottom: 5px;">Persona / Style <span style="color:#888;font-size:11px;">(回复风格)</span></label>
             <textarea id="ai-persona" rows="3" style="width: 100%; padding: 8px; margin-bottom: 15px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">${config.persona}</textarea>
@@ -257,13 +309,18 @@
         // Add new channel
         channelAddBtn.onclick = () => {
             const name = channelNameInput.value.trim() || '新渠道 ' + (getSavedChannels().length + 1);
+            const modelListText = document.getElementById('ai-model-list').value;
+            const modelList = modelListText.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+            const model = document.getElementById('ai-model-custom').value || document.getElementById('ai-model-select').value;
+
             const newChannel = {
                 id: generateChannelId(),
                 name: name,
-                provider: document.getElementById('ai-provider').value,
+                modelList: modelList,
+                requestFormat: document.getElementById('ai-request-format').value,
                 apiBaseUrl: document.getElementById('ai-api-url').value,
                 apiKey: document.getElementById('ai-api-key').value,
-                model: document.getElementById('ai-model-custom').value || document.getElementById('ai-model-select').value
+                model: model
             };
             saveChannel(newChannel);
             setActiveChannel(newChannel.id);
@@ -289,7 +346,6 @@
             }
         };
 
-        const providerSelect = document.getElementById('ai-provider');
         const modelSelect = document.getElementById('ai-model-select');
         const modelCustom = document.getElementById('ai-model-custom');
 
@@ -304,21 +360,15 @@
             }
         }
 
-        // Update model list when provider changes
-        providerSelect.onchange = () => {
-            const newProvider = providerSelect.value;
-            const models = PROVIDER_MODELS[newProvider] || [];
-            modelSelect.innerHTML = buildModelOptions(newProvider, models[0] || '');
-            modelCustom.value = models[0] || '';
+        // Sync model dropdown when model list textarea changes
+        const modelListTextarea = document.getElementById('ai-model-list');
+        modelListTextarea.onchange = () => {
+            const models = modelListTextarea.value.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+            modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('') + '<option value="__custom__">自定义模型...</option>';
             modelCustom.style.display = 'none';
         };
 
         modelSelect.onchange = updateCustomInput;
-
-        // Initialize custom input visibility
-        if (!PROVIDER_MODELS[config.provider]?.includes(config.model)) {
-            modelCustom.style.display = 'block';
-        }
 
         // Clear history button
         document.getElementById('ai-clear-history').onclick = () => {
@@ -331,20 +381,17 @@
 
         document.getElementById('ai-cancel').onclick = () => modal.remove();
         document.getElementById('ai-save').onclick = () => {
-            config.provider = providerSelect.value;
+            // Save model list from textarea
+            const modelListText = document.getElementById('ai-model-list').value;
+            config.modelList = modelListText.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+
+            // Save request format
+            config.requestFormat = document.getElementById('ai-request-format').value;
+
             config.apiBaseUrl = document.getElementById('ai-api-url').value;
             config.apiKey = document.getElementById('ai-api-key').value;
             // Get model from custom input if custom selected, otherwise from dropdown
             config.model = modelSelect.value === '__custom__' ? modelCustom.value : modelSelect.value;
-
-            // Auto-detect provider from model name
-            if (config.model.includes('claude')) {
-                config.provider = 'anthropic';
-            } else if (config.model.includes('gemini')) {
-                config.provider = 'gemini';
-            } else {
-                config.provider = 'openai';
-            }
 
             config.persona = document.getElementById('ai-persona').value;
             config.autoSend = document.getElementById('ai-autosend').checked;
@@ -357,7 +404,8 @@
                 const updatedChannel = {
                     id: activeId,
                     name: channelNameInput.value.trim() || getSavedChannels().find(c => c.id === activeId)?.name || '未命名',
-                    provider: config.provider,
+                    modelList: config.modelList,
+                    requestFormat: config.requestFormat,
                     apiBaseUrl: config.apiBaseUrl,
                     apiKey: config.apiKey,
                     model: config.model
@@ -372,9 +420,12 @@
 
     GM_registerMenuCommand("Settings", createSettingsModal);
 
-    // --- Core Logic ---
+    /* =========================================================================
+     * MODULE 5: TWEET EXTRACTION
+     * =========================================================================
+     * Extract text and images from tweets
+     * ========================================================================= */
 
-    // 1. Extract Tweet info
     function getTweetText(articleElement) {
         // This is a heuristic. Tweet text is usually in a div with lang attribute or specific props.
         // We look for the main text container.
@@ -426,13 +477,12 @@
         });
     }
 
-    // --- UI Utilities ---
-    // ... Settings Modal code remains same ... (omitted for brevity in this tool call if I could, but wait, I need to be careful with replace)
-    // Actually, I should use replace_file_content on specific blocks or just overwrite the file if I want to be safe and clean.
-    // Given the file size is small, I will overwrite or replace large chunks.
-    // Let's replace the 'Core Logic' and 'Interaction Flow' sections.
+    /* =========================================================================
+     * MODULE 6: STYLES & CSS
+     * =========================================================================
+     * Inject CSS styles for loading animations, panels, and buttons
+     * ========================================================================= */
 
-    // Helper to inject styles
     function addStyles() {
         const style = document.createElement('style');
         style.textContent = `
@@ -624,6 +674,12 @@
     }
     addStyles();
 
+    /* =========================================================================
+     * MODULE 7: UI COMPONENTS
+     * =========================================================================
+     * Loading spinner, error display, and other visual feedback
+     * ========================================================================= */
+
     function showLoading(article) {
         const container = article.querySelector('div[role="group"]')?.parentNode; // Likely the parent of action bar
         if (!container) return null;
@@ -683,7 +739,11 @@
         container.appendChild(errorBox);
     }
 
-    // --- Reply Languages (styles and strategies are defined below with custom support) ---
+    /* =========================================================================
+     * MODULE 8: REPLY CONFIGURATION
+     * =========================================================================
+     * Languages, styles, strategies, history, and caching
+     * ========================================================================= */
 
     const REPLY_LANGUAGES = [
         { id: 'auto', name: '🌐 自动检测' },
@@ -832,7 +892,12 @@
         GM_setValue('replyCache', replyCache);
     }
 
-    // --- Comment Scraping ---
+    /* =========================================================================
+     * MODULE 9: COMMENT ANALYSIS
+     * =========================================================================
+     * Scrape existing replies and AI-powered analysis
+     * ========================================================================= */
+
     function scrapeReplies() {
         const replies = [];
         // Find all reply tweets on the page
@@ -901,7 +966,7 @@
         let requestData = {};
         let headers = { "Content-Type": "application/json" };
 
-        if (config.provider === 'anthropic') {
+        if (config.requestFormat === 'anthropic') {
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
             headers["x-api-key"] = config.apiKey;
             headers["anthropic-version"] = "2023-06-01";
@@ -910,7 +975,7 @@
                 max_tokens: 200,
                 messages: [{ role: "user", content: promptSystem + "\n\n---\n\n" + promptUser }]
             };
-        } else if (config.provider === 'gemini') {
+        } else if (config.requestFormat === 'gemini') {
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
             requestData = {
                 contents: [{ parts: [{ text: promptSystem + "\n\n" + promptUser }] }]
@@ -939,12 +1004,13 @@
                         try {
                             const data = JSON.parse(response.responseText);
                             let content = "";
-                            if (config.provider === 'anthropic') {
+                            if (config.requestFormat === 'anthropic') {
                                 content = data.content?.[0]?.text || "";
-                            } else if (config.provider === 'gemini') {
+                            } else if (config.requestFormat === 'gemini') {
                                 content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
                             } else {
-                                content = data.choices?.[0]?.message?.content || "";
+                                const choices = data.data?.choices || data.choices;
+                                content = choices?.[0]?.message?.content || "";
                             }
                             resolve({
                                 summary: content.trim(),
@@ -962,7 +1028,12 @@
         });
     }
 
-    // --- Options Panel (Inline, below tweet) ---
+    /* =========================================================================
+     * MODULE 10: OPTIONS PANEL
+     * =========================================================================
+     * Inline panel for reply generation options and controls
+     * ========================================================================= */
+
     function showOptionsPanel(article) {
         // Remove existing panels for this article
         const existingPanel = article.querySelector('.x-ai-inline-panel');
@@ -996,19 +1067,43 @@
             animation: x-ai-fade-in 0.2s;
             overflow: hidden;
         `;
+        const activeChannel = getSavedChannels().find(c => c.id === getActiveChannelId());
+        const channelName = activeChannel?.name || '未配置';
+        const modelName = config.model || '未选择';
+
         panel.innerHTML = `
-            <!-- Header with language dropdown -->
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #333;">
-                <span style="font-size: 14px; font-weight: 600; color: #e7e9ea;">🤖 AI 智能回复</span>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 10px; color: #666;">
-                        <input type="checkbox" class="x-ai-stream-toggle" ${genSettings.stream ? 'checked' : ''} style="width: 12px; height: 12px; cursor: pointer;">
-                        <span>流式</span>
-                    </label>
-                    <select class="x-ai-lang-select" style="padding: 4px 8px; background: #222; border: 1px solid #444; color: #888; border-radius: 6px; font-size: 11px; cursor: pointer;">
-                        ${REPLY_LANGUAGES.map(l => `<option value="${l.id}"${genSettings.lang === l.id ? ' selected' : ''}>${l.name}</option>`).join('')}
-                    </select>
-                    <button class="x-ai-inline-close" style="background: none; border: none; color: #888; font-size: 18px; cursor: pointer; padding: 0; line-height: 1;">×</button>
+            <!-- Header with quick settings -->
+            <div style="padding: 12px 15px; border-bottom: 1px solid #333;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 14px; font-weight: 600; color: #e7e9ea;">🤖 AI 回复</span>
+                        <span class="x-ai-channel-info" style="font-size: 11px; color: #888; cursor: pointer;" title="点击切换渠道/模型">
+                            📡 ${channelName} / ${modelName}
+                        </span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 10px; color: #666;">
+                            <input type="checkbox" class="x-ai-stream-toggle" ${genSettings.stream ? 'checked' : ''} style="width: 12px; height: 12px; cursor: pointer;">
+                            <span>流式</span>
+                        </label>
+                        <select class="x-ai-lang-select" style="padding: 4px 8px; background: #222; border: 1px solid #444; color: #888; border-radius: 6px; font-size: 11px; cursor: pointer;">
+                            ${REPLY_LANGUAGES.map(l => `<option value="${l.id}"${genSettings.lang === l.id ? ' selected' : ''}>${l.name}</option>`).join('')}
+                        </select>
+                        <button class="x-ai-toggle-settings" style="background: none; border: none; color: #888; font-size: 14px; cursor: pointer; padding: 2px;" title="切换渠道/模型">⚙️</button>
+                        <button class="x-ai-inline-close" style="background: none; border: none; color: #888; font-size: 18px; cursor: pointer; padding: 0; line-height: 1;">×</button>
+                    </div>
+                </div>
+                <!-- Expandable channel/model selector (hidden by default) -->
+                <div class="x-ai-quick-settings" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid #333;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <select class="x-ai-channel-quick" style="flex: 1; padding: 6px 10px; background: #1a1a1a; border: 1px solid #333; color: #e7e9ea; border-radius: 6px; font-size: 12px; cursor: pointer;">
+                            ${getSavedChannels().map(c => `<option value="${c.id}" ${c.id === getActiveChannelId() ? 'selected' : ''}>${c.name}</option>`).join('') || '<option value="">未配置渠道</option>'}
+                        </select>
+                        <select class="x-ai-model-quick" style="flex: 1; padding: 6px 10px; background: #1a1a1a; border: 1px solid #333; color: #e7e9ea; border-radius: 6px; font-size: 12px; cursor: pointer;">
+                            ${(config.modelList || []).map(m => `<option value="${m}" ${m === config.model ? 'selected' : ''}>${m}</option>`).join('') || '<option value="">无可用模型</option>'}
+                        </select>
+                        <button class="x-ai-settings-btn" style="padding: 6px 10px; background: #333; border: none; color: #888; border-radius: 6px; font-size: 12px; cursor: pointer;" title="完整设置">📋</button>
+                    </div>
                 </div>
             </div>
             
@@ -1114,6 +1209,65 @@
         const langSelect = panel.querySelector('.x-ai-lang-select');
         const historyEmpty = panel.querySelector('.x-ai-history-empty');
         const historyList = panel.querySelector('.x-ai-history-list');
+
+        // Quick channel/model selectors
+        const channelQuick = panel.querySelector('.x-ai-channel-quick');
+        const modelQuick = panel.querySelector('.x-ai-model-quick');
+        const settingsBtn = panel.querySelector('.x-ai-settings-btn');
+        const quickSettings = panel.querySelector('.x-ai-quick-settings');
+        const toggleSettingsBtn = panel.querySelector('.x-ai-toggle-settings');
+        const channelInfo = panel.querySelector('.x-ai-channel-info');
+
+        // Toggle expand/collapse quick settings
+        const toggleQuickSettings = () => {
+            const isHidden = quickSettings.style.display === 'none';
+            quickSettings.style.display = isHidden ? 'block' : 'none';
+            toggleSettingsBtn.style.color = isHidden ? '#1d9bf0' : '#888';
+        };
+        toggleSettingsBtn.onclick = toggleQuickSettings;
+        channelInfo.onclick = toggleQuickSettings;
+
+        // Update channel info text when switching
+        const updateChannelInfo = () => {
+            const ch = getSavedChannels().find(c => c.id === getActiveChannelId());
+            channelInfo.textContent = `📡 ${ch?.name || '未配置'} / ${config.model || '未选择'}`;
+        };
+
+        // Channel quick switch
+        channelQuick.onchange = () => {
+            const channelId = channelQuick.value;
+            if (channelId) {
+                setActiveChannel(channelId);
+                // Update model dropdown with new channel's models
+                modelQuick.innerHTML = (config.modelList || []).map(m =>
+                    `<option value="${m}" ${m === config.model ? 'selected' : ''}>${m}</option>`
+                ).join('') || '<option value="">无可用模型</option>';
+                updateChannelInfo();
+            }
+        };
+
+        // Model quick switch
+        modelQuick.onchange = () => {
+            config.model = modelQuick.value;
+            GM_setValue('config', config);
+            // Update active channel's model too
+            const activeId = getActiveChannelId();
+            if (activeId) {
+                const channels = getSavedChannels();
+                const idx = channels.findIndex(c => c.id === activeId);
+                if (idx >= 0) {
+                    channels[idx].model = config.model;
+                    GM_setValue('savedChannels', channels);
+                }
+            }
+            updateChannelInfo();
+        };
+
+        // Settings button
+        settingsBtn.onclick = () => {
+            panel.remove();
+            createSettingsModal();
+        };
 
         // Load cached replies for this tweet into History tab
         const cached = getCachedReplies(tweetText);
@@ -1360,12 +1514,12 @@
                 const streamPreview = replyList.querySelector('.x-ai-stream-preview');
 
                 try {
-                    addGenLog(`调用 AI API (${config.provider}/${config.model}) 流式传输...`, 'action');
+                    addGenLog(`调用 AI API (${config.requestFormat}/${config.model}) 流式传输...`, 'action');
                     addGenLog(`API Base: ${config.apiBaseUrl}`, 'info');
                     // Build URL for logging
-                    let logUrl = config.provider === 'anthropic'
+                    let logUrl = config.requestFormat === 'anthropic'
                         ? `${config.apiBaseUrl}/v1/messages`
-                        : config.provider === 'gemini'
+                        : config.requestFormat === 'gemini'
                             ? `${config.apiBaseUrl}/v1beta/models/${config.model}:...`
                             : `${config.apiBaseUrl}/v1/chat/completions`;
                     addGenLog(`完整 URL: ${logUrl}`, 'info');
@@ -1386,7 +1540,7 @@
             } else {
                 // Normal mode
                 replyList.innerHTML = '<div style="padding: 15px; text-align: center; color: #888;"><div class="x-ai-spinner" style="display: inline-block; margin-bottom: 8px;"></div><div>正在生成...</div></div>';
-                addGenLog(`调用 AI API (${config.provider}/${config.model})...`, 'action');
+                addGenLog(`调用 AI API (${config.requestFormat}/${config.model})...`, 'action');
                 addGenLog(`API 地址: ${config.apiBaseUrl}`, 'info');
                 replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages);
             }
@@ -1475,7 +1629,12 @@
         regenerateBtn.onclick = doGenerate;
     }
 
-    // Multi-reply generation with optional image support
+    /* =========================================================================
+     * MODULE 11: API REQUESTS
+     * =========================================================================
+     * AI API calls for reply generation, streaming, and translation
+     * ========================================================================= */
+
     async function generateMultipleReplies(tweetContent, style, lang, count, length = 'medium', strategy = 'default', analysisResult = null, images = []) {
         if (!config.apiKey) {
             throw new Error('请先在设置中配置 API Key');
@@ -1552,7 +1711,7 @@
 
         // Try with images first, fallback to text-only if fails
         const buildRequest = async (withImages) => {
-            if (config.provider === 'anthropic') {
+            if (config.requestFormat === 'anthropic') {
                 url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
                 headers["x-api-key"] = config.apiKey;
                 headers["anthropic-version"] = "2023-06-01";
@@ -1583,7 +1742,7 @@
                     max_tokens: 2048,
                     messages: [{ role: "user", content: typeof userContent === 'string' ? fullUserMessage : userContent }]
                 };
-            } else if (config.provider === 'gemini') {
+            } else if (config.requestFormat === 'gemini') {
                 url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
 
                 const parts = [{ text: promptSystem + "\n\n" + promptUser }];
@@ -1601,7 +1760,7 @@
                     contents: [{ parts }]
                 };
             } else {
-                // OpenAI compatible
+                // OpenAI Chat Completions API (/v1/chat/completions)
                 url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
                 headers["Authorization"] = `Bearer ${config.apiKey}`;
 
@@ -1633,6 +1792,12 @@
         // Try with images first
         await buildRequest(hasImages);
 
+        // Log detailed request info to console
+        console.log('[X-AI-Reply] === API 请求详情 ===');
+        console.log('[X-AI-Reply] URL:', url);
+        console.log('[X-AI-Reply] Headers:', headers);
+        console.log('[X-AI-Reply] Request Data:', JSON.stringify(requestData, null, 2));
+
         // API call function that can be retried
         const makeRequest = () => new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
@@ -1646,12 +1811,16 @@
                             const data = JSON.parse(response.responseText);
                             let content = "";
 
-                            if (config.provider === 'anthropic') {
+                            if (config.requestFormat === 'anthropic') {
                                 content = data.content?.[0]?.text || "";
-                            } else if (config.provider === 'gemini') {
+                            } else if (config.requestFormat === 'gemini') {
                                 content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
                             } else {
-                                content = data.choices?.[0]?.message?.content || "";
+                                // OpenAI format - handle both direct and wrapped response
+                                // Wrapped: {code: 0, data: {choices: [...]}}
+                                // Direct: {choices: [...]}
+                                const choices = data.data?.choices || data.choices;
+                                content = choices?.[0]?.message?.content || "";
                             }
 
                             if (!content) {
@@ -1781,7 +1950,7 @@
         let headers = { "Content-Type": "application/json" };
 
         // Build request based on provider
-        if (config.provider === 'anthropic') {
+        if (config.requestFormat === 'anthropic') {
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
             headers["x-api-key"] = config.apiKey;
             headers["anthropic-version"] = "2023-06-01";
@@ -1791,7 +1960,7 @@
                 stream: true,
                 messages: [{ role: "user", content: promptSystem + "\n\n---\n\n" + promptUser }]
             };
-        } else if (config.provider === 'gemini') {
+        } else if (config.requestFormat === 'gemini') {
             // Gemini uses different streaming endpoint
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:streamGenerateContent?alt=sse&key=${config.apiKey}`;
             requestData = {
@@ -1837,12 +2006,13 @@
                             const data = JSON.parse(jsonStr);
                             let delta = '';
 
-                            if (config.provider === 'anthropic') {
+                            if (config.requestFormat === 'anthropic') {
                                 delta = data.delta?.text || '';
-                            } else if (config.provider === 'gemini') {
+                            } else if (config.requestFormat === 'gemini') {
                                 delta = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
                             } else {
-                                delta = data.choices?.[0]?.delta?.content || '';
+                                const streamChoices = data.data?.choices || data.choices;
+                                delta = streamChoices?.[0]?.delta?.content || '';
                             }
 
                             if (delta) {
@@ -1904,7 +2074,7 @@
         let requestData = {};
         let headers = { "Content-Type": "application/json" };
 
-        if (config.provider === 'anthropic') {
+        if (config.requestFormat === 'anthropic') {
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
             headers["x-api-key"] = config.apiKey;
             headers["anthropic-version"] = "2023-06-01";
@@ -1913,7 +2083,7 @@
                 max_tokens: 500,
                 messages: [{ role: "user", content: promptSystem + "\n\n---\n\n" + promptUser }]
             };
-        } else if (config.provider === 'gemini') {
+        } else if (config.requestFormat === 'gemini') {
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
             requestData = {
                 contents: [{ parts: [{ text: promptSystem + "\n\n" + promptUser }] }]
@@ -1942,12 +2112,13 @@
                         try {
                             const data = JSON.parse(response.responseText);
                             let content = "";
-                            if (config.provider === 'anthropic') {
+                            if (config.requestFormat === 'anthropic') {
                                 content = data.content?.[0]?.text || "";
-                            } else if (config.provider === 'gemini') {
+                            } else if (config.requestFormat === 'gemini') {
                                 content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
                             } else {
-                                content = data.choices?.[0]?.message?.content || "";
+                                const choices = data.data?.choices || data.choices;
+                                content = choices?.[0]?.message?.content || "";
                             }
                             resolve(content.trim());
                         } catch (e) {
@@ -1982,7 +2153,7 @@
             "Content-Type": "application/json"
         };
 
-        if (config.provider === 'anthropic') {
+        if (config.requestFormat === 'anthropic') {
             // Anthropic API: baseUrl/v1/messages
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
             headers["x-api-key"] = config.apiKey;
@@ -1992,7 +2163,7 @@
                 max_tokens: 1024,
                 messages: [{ role: "user", content: promptSystem + "\n\n---\n\n" + promptUser }]
             };
-        } else if (config.provider === 'gemini') {
+        } else if (config.requestFormat === 'gemini') {
             // Gemini API: baseUrl/v1beta/models/{model}:generateContent
             url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
             // Standard Google AI Studio uses key param in URL
@@ -2027,22 +2198,23 @@
                             const data = JSON.parse(response.responseText);
                             let reply = "";
 
-                            if (config.provider === 'anthropic') {
+                            if (config.requestFormat === 'anthropic') {
                                 if (data.content && data.content.length > 0) {
                                     reply = data.content[0].text;
                                 }
-                            } else if (config.provider === 'gemini') {
+                            } else if (config.requestFormat === 'gemini') {
                                 if (data.candidates && data.candidates.length > 0) {
                                     const part = data.candidates[0].content.parts[0];
                                     reply = part.text || "";
                                 }
                             } else {
-                                // OpenAI
-                                if (!data.choices || !data.choices.length) {
+                                // OpenAI - handle wrapped response
+                                const choices = data.data?.choices || data.choices;
+                                if (!choices || !choices.length) {
                                     reject('No choices returned from API');
                                     return;
                                 }
-                                const message = data.choices[0].message;
+                                const message = choices[0].message;
                                 if (message.content) {
                                     reply = message.content;
                                 } else {
@@ -2071,7 +2243,12 @@
         });
     }
 
-    // 3. Insert Text into X Editor
+    /* =========================================================================
+     * MODULE 12: EDITOR OPERATIONS
+     * =========================================================================
+     * Insert text into reply editor, click send, and learning
+     * ========================================================================= */
+
     async function insertTextIntoEditor(text) {
         // Wait for editor to appear
         let editor = document.querySelector('div[data-testid="tweetTextarea_0"]'); // Reply modal or inline
@@ -2169,7 +2346,12 @@
         }
     }, true);
 
-    // --- Interaction Flow ---
+    /* =========================================================================
+     * MODULE 13: INITIALIZATION
+     * =========================================================================
+     * Main interaction flow, button injection, and mutation observer
+     * ========================================================================= */
+
     async function handleAiClick(tweetArticle, btnElement) {
         // Clear previous errors
         const prevError = tweetArticle.querySelector('.x-ai-error');
