@@ -15,13 +15,7 @@
 (function () {
     'use strict';
 
-    /* =========================================================================
-     * MODULE 1: CONFIGURATION & CONSTANTS
-     * =========================================================================
-     * Default settings, API configuration, and global state
-     * ========================================================================= */
-
-    // --- Default Configuration ---
+    // --- Configuration & State ---
     const DEFAULT_CONFIG = {
         requestFormat: "openai", // 'openai', 'anthropic', 'gemini'
         apiBaseUrl: "https://api.openai.com",
@@ -34,12 +28,7 @@
 
     let config = { ...DEFAULT_CONFIG, ...GM_getValue('config', {}) };
 
-    /* =========================================================================
-     * MODULE 2: CHANNEL MANAGEMENT
-     * =========================================================================
-     * Save, load, delete, and switch between API channels
-     * ========================================================================= */
-
+    // --- Channel Management ---
     function getSavedChannels() {
         return GM_getValue('savedChannels', []);
     }
@@ -83,17 +72,11 @@
         return 'channel_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
 
-    /* =========================================================================
-     * MODULE 3: MODEL CONFIGURATION
-     * =========================================================================
-     * Model lists, icons, and provider detection utilities
-     * ========================================================================= */
-
     // --- Icons ---
     const ROBOT_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true" class="r-4qtqp9 r-yyyyoo r-dnmrzs r-bnwqim r-1plcrui r-lrvibr r-1xvli5t r-1hdv0qi"><g><path d="M12 2a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v2.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5V17a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 .5-.5V6a2 2 0 0 1 2-2h2V4a2 2 0 0 1 2-2zm0 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm-3.5-1a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" fill="currentColor"></path></g></svg>`;
 
     // --- Model Lists ---
-    // Local proxy models
+    // Local proxy models (user selects provider manually)
     const LOCAL_MODELS = {
         openai: [
             "gpt-4o",
@@ -170,12 +153,7 @@
     // Keep PROVIDER_MODELS for backward compatibility
     const PROVIDER_MODELS = LOCAL_MODELS;
 
-    /* =========================================================================
-     * MODULE 4: SETTINGS MODAL
-     * =========================================================================
-     * Configuration UI for channels, models, API keys, and preferences
-     * ========================================================================= */
-
+    // --- UI Utilities ---
     function createSettingsModal() {
         if (document.getElementById('x-ai-reply-settings')) return;
 
@@ -281,46 +259,6 @@
                 <button id="ai-clear-history" style="margin-top: 8px; padding: 6px 12px; background: transparent; color: #ff6b6b; border: 1px solid #ff6b6b; border-radius: 12px; font-size: 11px; cursor: pointer;">清除历史</button>
             </div>
 
-            <!-- Domain Style Configuration -->
-            <div style="padding: 12px; background: #111; border-radius: 8px; margin-bottom: 15px;">
-                <div style="font-size: 13px; color: #888; margin-bottom: 8px;">🏷️ 领域回复风格</div>
-                <div style="font-size: 11px; color: #666; margin-bottom: 10px;">为不同领域的推文配置默认回复风格</div>
-                
-                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                    <select id="ai-domain-select" style="flex: 1; padding: 6px 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-size: 12px;">
-                        ${DOMAIN_CATEGORIES.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
-                    </select>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-                    <div>
-                        <label style="font-size: 10px; color: #666; display: block; margin-bottom: 2px;">风格</label>
-                        <select id="ai-domain-style" style="width: 100%; padding: 4px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-size: 11px;">
-                            ${getAllStyles().map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div>
-                        <label style="font-size: 10px; color: #666; display: block; margin-bottom: 2px;">策略</label>
-                        <select id="ai-domain-strategy" style="width: 100%; padding: 4px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-size: 11px;">
-                            ${getAllStrategies().map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div>
-                        <label style="font-size: 10px; color: #666; display: block; margin-bottom: 2px;">长度</label>
-                        <select id="ai-domain-length" style="width: 100%; padding: 4px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-size: 11px;">
-                            <option value="short">短</option>
-                            <option value="medium">中</option>
-                            <option value="long">长</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div style="display: flex; gap: 6px;">
-                    <button id="ai-domain-save" style="flex: 1; padding: 6px; background: #1d9bf0; color: #fff; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">保存领域设置</button>
-                    <button id="ai-domain-reset" style="padding: 6px 10px; background: transparent; color: #888; border: 1px solid #444; border-radius: 4px; font-size: 11px; cursor: pointer;">重置</button>
-                </div>
-            </div>
-
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button id="ai-cancel" style="padding: 8px 16px; background: transparent; color: #fff; border: 1px solid #444; border-radius: 20px; cursor: pointer;">取消</button>
                 <button id="ai-save" style="padding: 8px 16px; background: #1d9bf0; color: #fff; border: none; border-radius: 20px; cursor: pointer; font-weight: bold;">保存</button>
@@ -419,47 +357,6 @@
             }
         };
 
-        // --- Domain Style Configuration Handlers ---
-        const domainSelect = document.getElementById('ai-domain-select');
-        const domainStyleSelect = document.getElementById('ai-domain-style');
-        const domainStrategySelect = document.getElementById('ai-domain-strategy');
-        const domainLengthSelect = document.getElementById('ai-domain-length');
-        const domainSaveBtn = document.getElementById('ai-domain-save');
-        const domainResetBtn = document.getElementById('ai-domain-reset');
-
-        // Load current domain settings when domain changes
-        const loadDomainSettings = () => {
-            const domainId = domainSelect.value;
-            const style = getDomainStyle(domainId);
-            domainStyleSelect.value = style.style || 'engage';
-            domainStrategySelect.value = style.strategy || 'default';
-            domainLengthSelect.value = style.length || 'medium';
-        };
-
-        domainSelect.onchange = loadDomainSettings;
-        loadDomainSettings(); // Load initial
-
-        // Save domain style
-        domainSaveBtn.onclick = () => {
-            const domainId = domainSelect.value;
-            saveDomainStyle(domainId, {
-                style: domainStyleSelect.value,
-                strategy: domainStrategySelect.value,
-                length: domainLengthSelect.value
-            });
-            alert(`已保存 "${getDomainById(domainId).name}" 领域的风格设置`);
-        };
-
-        // Reset domain style to default
-        domainResetBtn.onclick = () => {
-            const domainId = domainSelect.value;
-            if (confirm(`确定要重置 "${getDomainById(domainId).name}" 的风格设置为默认值吗？`)) {
-                resetDomainStyle(domainId);
-                loadDomainSettings();
-                alert('已重置为默认设置');
-            }
-        };
-
         document.getElementById('ai-cancel').onclick = () => modal.remove();
         document.getElementById('ai-save').onclick = () => {
             // Save model list from textarea
@@ -501,12 +398,9 @@
 
     GM_registerMenuCommand("Settings", createSettingsModal);
 
-    /* =========================================================================
-     * MODULE 5: TWEET EXTRACTION
-     * =========================================================================
-     * Extract text and images from tweets
-     * ========================================================================= */
+    // --- Core Logic ---
 
+    // 1. Extract Tweet info
     function getTweetText(articleElement) {
         // This is a heuristic. Tweet text is usually in a div with lang attribute or specific props.
         // We look for the main text container.
@@ -558,12 +452,13 @@
         });
     }
 
-    /* =========================================================================
-     * MODULE 6: STYLES & CSS
-     * =========================================================================
-     * Inject CSS styles for loading animations, panels, and buttons
-     * ========================================================================= */
+    // --- UI Utilities ---
+    // ... Settings Modal code remains same ... (omitted for brevity in this tool call if I could, but wait, I need to be careful with replace)
+    // Actually, I should use replace_file_content on specific blocks or just overwrite the file if I want to be safe and clean.
+    // Given the file size is small, I will overwrite or replace large chunks.
+    // Let's replace the 'Core Logic' and 'Interaction Flow' sections.
 
+    // Helper to inject styles
     function addStyles() {
         const style = document.createElement('style');
         style.textContent = `
@@ -755,12 +650,6 @@
     }
     addStyles();
 
-    /* =========================================================================
-     * MODULE 7: UI COMPONENTS
-     * =========================================================================
-     * Loading spinner, error display, and other visual feedback
-     * ========================================================================= */
-
     function showLoading(article) {
         const container = article.querySelector('div[role="group"]')?.parentNode; // Likely the parent of action bar
         if (!container) return null;
@@ -820,11 +709,7 @@
         container.appendChild(errorBox);
     }
 
-    /* =========================================================================
-     * MODULE 8: REPLY CONFIGURATION
-     * =========================================================================
-     * Languages, styles, strategies, history, and caching
-     * ========================================================================= */
+    // --- Reply Languages (styles and strategies are defined below with custom support) ---
 
     const REPLY_LANGUAGES = [
         { id: 'auto', name: '🌐 自动检测' },
@@ -973,195 +858,7 @@
         GM_setValue('replyCache', replyCache);
     }
 
-    /* =========================================================================
-     * MODULE 8.5: DOMAIN CLASSIFICATION
-     * =========================================================================
-     * Tweet domain detection, domain-specific styles, and classification
-     * ========================================================================= */
-
-    // --- Domain Categories ---
-    const DOMAIN_CATEGORIES = [
-        { id: 'ai', name: '🤖 AI/科技', keywords: ['AI', 'GPT', 'LLM', 'ChatGPT', 'Claude', 'Gemini', '人工智能', '机器学习', 'deep learning', 'neural', 'transformer', 'OpenAI', 'Anthropic', '大模型', 'AGI', 'AI agent'] },
-        { id: 'emotion', name: '💖 情感', keywords: ['情感', '爱情', '心理', '治愈', '感情', '恋爱', '分手', '孤独', '幸福', '温暖', 'love', 'relationship', 'feeling', 'heart', '鸡汤', '人生', '生活感悟'] },
-        { id: 'politics', name: '🏛️ 政治', keywords: ['政治', '政策', '选举', '政府', '总统', 'Trump', 'Biden', '民主', '共和', 'election', 'vote', 'congress', '国会', '法案', 'policy'] },
-        { id: 'tech', name: '💻 科技产品', keywords: ['iPhone', 'Android', 'Apple', 'Google', 'Microsoft', '手机', '电脑', '软件', 'App', 'startup', '创业', 'SaaS', 'web3', 'crypto', 'blockchain', '区块链'] },
-        { id: 'finance', name: '💰 财经', keywords: ['股票', '投资', '经济', '金融', 'stock', 'invest', 'market', 'trading', '基金', 'ETF', '理财', 'Fed', '美联储', 'GDP', '通胀', 'inflation'] },
-        { id: 'entertainment', name: '🎬 娱乐', keywords: ['电影', '音乐', '明星', '综艺', 'movie', 'music', 'celebrity', '演唱会', '专辑', 'Netflix', '剧', 'show', '偶像', '粉丝', 'fan'] },
-        { id: 'sports', name: '⚽ 体育', keywords: ['足球', '篮球', '体育', '比赛', 'NBA', 'FIFA', 'football', 'soccer', 'basketball', '世界杯', '奥运', 'Olympics', '运动员', 'player', 'game'] },
-        { id: 'food', name: '🍜 美食', keywords: ['美食', '餐厅', '烹饪', '食物', 'food', 'recipe', 'cooking', 'restaurant', '好吃', '菜谱', '火锅', '咖啡', 'coffee', '茶', '甜点'] },
-        { id: 'general', name: '💬 通用', keywords: [] }
-    ];
-
-    // --- Default Domain Styles ---
-    const DEFAULT_DOMAIN_STYLES = {
-        ai: { style: 'pro', strategy: 'unique', length: 'medium' },
-        emotion: { style: 'warm', strategy: 'agree', length: 'medium' },
-        politics: { style: 'sharp', strategy: 'balance', length: 'long' },
-        tech: { style: 'pro', strategy: 'unique', length: 'medium' },
-        finance: { style: 'pro', strategy: 'balance', length: 'long' },
-        entertainment: { style: 'humor', strategy: 'engage', length: 'short' },
-        sports: { style: 'engage', strategy: 'agree', length: 'short' },
-        food: { style: 'warm', strategy: 'engage', length: 'short' },
-        general: { style: 'engage', strategy: 'default', length: 'medium' }
-    };
-
-    // --- Domain Style Storage ---
-    let domainStyles = GM_getValue('domainStyles', {});
-
-    function getDomainById(domainId) {
-        return DOMAIN_CATEGORIES.find(d => d.id === domainId) || DOMAIN_CATEGORIES.find(d => d.id === 'general');
-    }
-
-    function getDomainStyle(domainId) {
-        return domainStyles[domainId] || DEFAULT_DOMAIN_STYLES[domainId] || DEFAULT_DOMAIN_STYLES.general;
-    }
-
-    function saveDomainStyle(domainId, styleSettings) {
-        domainStyles[domainId] = { ...getDomainStyle(domainId), ...styleSettings };
-        GM_setValue('domainStyles', domainStyles);
-    }
-
-    function resetDomainStyle(domainId) {
-        delete domainStyles[domainId];
-        GM_setValue('domainStyles', domainStyles);
-    }
-
-    // --- Keyword-based Quick Classification ---
-    function classifyByKeywords(text) {
-        if (!text) return null;
-        const lowerText = text.toLowerCase();
-
-        for (const domain of DOMAIN_CATEGORIES) {
-            if (domain.id === 'general') continue; // Skip general as fallback
-            for (const keyword of domain.keywords) {
-                if (lowerText.includes(keyword.toLowerCase())) {
-                    return domain.id;
-                }
-            }
-        }
-        return null; // No match found
-    }
-
-    // --- AI-powered Classification ---
-    async function classifyTweetDomainAI(tweetText) {
-        if (!config.apiKey) return 'general';
-
-        const domainList = DOMAIN_CATEGORIES
-            .filter(d => d.id !== 'general')
-            .map(d => `${d.id}: ${d.name.replace(/[^\u4e00-\u9fff\w\/]/g, '')}`)
-            .join(', ');
-
-        const promptSystem = `你是一个推文分类专家。请将推文分类到以下领域之一：${domainList}。只返回领域ID（如 ai, emotion, politics 等），不要其他内容。`;
-        const promptUser = `推文内容：${tweetText.substring(0, 300)}`;
-
-        let url = "";
-        let requestData = {};
-        let headers = { "Content-Type": "application/json" };
-
-        if (config.requestFormat === 'anthropic') {
-            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
-            headers["x-api-key"] = config.apiKey;
-            headers["anthropic-version"] = "2023-06-01";
-            requestData = {
-                model: config.model,
-                max_tokens: 50,
-                messages: [{ role: "user", content: promptSystem + "\n\n" + promptUser }]
-            };
-        } else if (config.requestFormat === 'gemini') {
-            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-            requestData = {
-                contents: [{ parts: [{ text: promptSystem + "\n\n" + promptUser }] }]
-            };
-        } else {
-            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
-            headers["Authorization"] = `Bearer ${config.apiKey}`;
-            requestData = {
-                model: config.model,
-                messages: [
-                    { role: "system", content: promptSystem },
-                    { role: "user", content: promptUser }
-                ],
-                temperature: 0.1,
-                max_tokens: 50
-            };
-        }
-
-        return new Promise((resolve) => {
-            GM_xmlhttpRequest({
-                method: "POST",
-                url: url,
-                headers: headers,
-                data: JSON.stringify(requestData),
-                onload: function (response) {
-                    if (response.status >= 200 && response.status < 300) {
-                        try {
-                            const data = JSON.parse(response.responseText);
-                            let content = "";
-                            if (config.requestFormat === 'anthropic') {
-                                content = data.content?.[0]?.text || "";
-                            } else if (config.requestFormat === 'gemini') {
-                                content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                            } else {
-                                const choices = data.data?.choices || data.choices;
-                                content = choices?.[0]?.message?.content || "";
-                            }
-
-                            // Extract domain ID from response
-                            const domainId = content.trim().toLowerCase().replace(/[^a-z]/g, '');
-                            const validDomain = DOMAIN_CATEGORIES.find(d => d.id === domainId);
-                            resolve(validDomain ? domainId : 'general');
-                        } catch (e) {
-                            resolve('general');
-                        }
-                    } else {
-                        resolve('general');
-                    }
-                },
-                onerror: () => resolve('general')
-            });
-        });
-    }
-
-    // --- Main Classification Function ---
-    // Uses keyword matching first, falls back to AI if no match
-    async function classifyTweetDomain(tweetText, forceAI = false) {
-        if (!tweetText) return 'general';
-
-        // Try keyword matching first (fast, no API call)
-        if (!forceAI) {
-            const keywordMatch = classifyByKeywords(tweetText);
-            if (keywordMatch) {
-                console.log(`[X-AI-Reply] Domain classified by keywords: ${keywordMatch}`);
-                return keywordMatch;
-            }
-        }
-
-        // Fall back to AI classification
-        console.log('[X-AI-Reply] No keyword match, using AI classification...');
-        const aiResult = await classifyTweetDomainAI(tweetText);
-        console.log(`[X-AI-Reply] Domain classified by AI: ${aiResult}`);
-        return aiResult;
-    }
-
-    // --- Domain Classification Cache ---
-    let domainCache = {};
-
-    function getCachedDomain(tweetText) {
-        const key = getTweetCacheKey(tweetText);
-        return domainCache[key] || null;
-    }
-
-    function setCachedDomain(tweetText, domainId) {
-        const key = getTweetCacheKey(tweetText);
-        domainCache[key] = domainId;
-    }
-
-    /* =========================================================================
-     * MODULE 9: COMMENT ANALYSIS
-     * =========================================================================
-     * Scrape existing replies and AI-powered analysis
-     * ========================================================================= */
-
+    // --- Comment Scraping ---
     function scrapeReplies() {
         const replies = [];
         // Find all reply tweets on the page
@@ -1292,12 +989,7 @@
         });
     }
 
-    /* =========================================================================
-     * MODULE 10: OPTIONS PANEL
-     * =========================================================================
-     * Inline panel for reply generation options and controls
-     * ========================================================================= */
-
+    // --- Options Panel (Inline, below tweet) ---
     function showOptionsPanel(article) {
         // Remove existing panels for this article
         const existingPanel = article.querySelector('.x-ai-inline-panel');
@@ -1331,49 +1023,19 @@
             animation: x-ai-fade-in 0.2s;
             overflow: hidden;
         `;
-        const activeChannel = getSavedChannels().find(c => c.id === getActiveChannelId());
-        const channelName = activeChannel?.name || '未配置';
-        const modelName = config.model || '未选择';
-
         panel.innerHTML = `
-            <!-- Header with quick settings -->
-            <div style="padding: 12px 15px; border-bottom: 1px solid #333;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 14px; font-weight: 600; color: #e7e9ea;">🤖 AI 回复</span>
-                        <span class="x-ai-channel-info" style="font-size: 11px; color: #888; cursor: pointer;" title="点击切换渠道/模型">
-                            📡 ${channelName} / ${modelName}
-                        </span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 10px; color: #666;">
-                            <input type="checkbox" class="x-ai-stream-toggle" ${genSettings.stream ? 'checked' : ''} style="width: 12px; height: 12px; cursor: pointer;">
-                            <span>流式</span>
-                        </label>
-                        <select class="x-ai-lang-select" style="padding: 4px 8px; background: #222; border: 1px solid #444; color: #888; border-radius: 6px; font-size: 11px; cursor: pointer;">
-                            ${REPLY_LANGUAGES.map(l => `<option value="${l.id}"${genSettings.lang === l.id ? ' selected' : ''}>${l.name}</option>`).join('')}
-                        </select>
-                        <button class="x-ai-toggle-settings" style="background: none; border: none; color: #888; font-size: 14px; cursor: pointer; padding: 2px;" title="切换渠道/模型">⚙️</button>
-                        <button class="x-ai-inline-close" style="background: none; border: none; color: #888; font-size: 18px; cursor: pointer; padding: 0; line-height: 1;">×</button>
-                    </div>
-                </div>
-                <!-- Domain display area -->
-                <div class="x-ai-domain-display" style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 11px; color: #888;">🏷️ 领域:</span>
-                    <span class="x-ai-domain-label" style="font-size: 11px; color: #1d9bf0; background: rgba(29, 155, 240, 0.15); padding: 3px 8px; border-radius: 12px; cursor: pointer;" title="点击重新检测">检测中...</span>
-                    <span class="x-ai-domain-status" style="font-size: 10px; color: #666;"></span>
-                </div>
-                <!-- Expandable channel/model selector (hidden by default) -->
-                <div class="x-ai-quick-settings" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid #333;">
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <select class="x-ai-channel-quick" style="flex: 1; padding: 6px 10px; background: #1a1a1a; border: 1px solid #333; color: #e7e9ea; border-radius: 6px; font-size: 12px; cursor: pointer;">
-                            ${getSavedChannels().map(c => `<option value="${c.id}" ${c.id === getActiveChannelId() ? 'selected' : ''}>${c.name}</option>`).join('') || '<option value="">未配置渠道</option>'}
-                        </select>
-                        <select class="x-ai-model-quick" style="flex: 1; padding: 6px 10px; background: #1a1a1a; border: 1px solid #333; color: #e7e9ea; border-radius: 6px; font-size: 12px; cursor: pointer;">
-                            ${(config.modelList || []).map(m => `<option value="${m}" ${m === config.model ? 'selected' : ''}>${m}</option>`).join('') || '<option value="">无可用模型</option>'}
-                        </select>
-                        <button class="x-ai-settings-btn" style="padding: 6px 10px; background: #333; border: none; color: #888; border-radius: 6px; font-size: 12px; cursor: pointer;" title="完整设置">📋</button>
-                    </div>
+            <!-- Header with language dropdown -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #333;">
+                <span style="font-size: 14px; font-weight: 600; color: #e7e9ea;">🤖 AI 智能回复</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 10px; color: #666;">
+                        <input type="checkbox" class="x-ai-stream-toggle" ${genSettings.stream ? 'checked' : ''} style="width: 12px; height: 12px; cursor: pointer;">
+                        <span>流式</span>
+                    </label>
+                    <select class="x-ai-lang-select" style="padding: 4px 8px; background: #222; border: 1px solid #444; color: #888; border-radius: 6px; font-size: 11px; cursor: pointer;">
+                        ${REPLY_LANGUAGES.map(l => `<option value="${l.id}"${genSettings.lang === l.id ? ' selected' : ''}>${l.name}</option>`).join('')}
+                    </select>
+                    <button class="x-ai-inline-close" style="background: none; border: none; color: #888; font-size: 18px; cursor: pointer; padding: 0; line-height: 1;">×</button>
                 </div>
             </div>
             
@@ -1386,11 +1048,6 @@
             
             <!-- Settings Tab Content -->
             <div class="x-ai-tab-content" data-tab="settings" style="padding: 15px;">
-                <!-- 领域风格应用提示 -->
-                <div class="x-ai-domain-hint" style="display: none; margin-bottom: 10px; padding: 8px 10px; background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 8px; font-size: 11px; color: #4ade80;">
-                    ✨ 已应用 <span class="x-ai-domain-hint-name"></span> 领域的默认风格
-                </div>
-                
                 <!-- 数量 + 字数 同一行 -->
                 <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 10px; flex-wrap: wrap;">
                     <div style="display: flex; align-items: center; gap: 6px;">
@@ -1485,150 +1142,7 @@
         const historyEmpty = panel.querySelector('.x-ai-history-empty');
         const historyList = panel.querySelector('.x-ai-history-list');
 
-        // Quick channel/model selectors
-        const channelQuick = panel.querySelector('.x-ai-channel-quick');
-        const modelQuick = panel.querySelector('.x-ai-model-quick');
-        const settingsBtn = panel.querySelector('.x-ai-settings-btn');
-        const quickSettings = panel.querySelector('.x-ai-quick-settings');
-        const toggleSettingsBtn = panel.querySelector('.x-ai-toggle-settings');
-        const channelInfo = panel.querySelector('.x-ai-channel-info');
-
-        // Toggle expand/collapse quick settings
-        const toggleQuickSettings = () => {
-            const isHidden = quickSettings.style.display === 'none';
-            quickSettings.style.display = isHidden ? 'block' : 'none';
-            toggleSettingsBtn.style.color = isHidden ? '#1d9bf0' : '#888';
-        };
-        toggleSettingsBtn.onclick = toggleQuickSettings;
-        channelInfo.onclick = toggleQuickSettings;
-
-        // Update channel info text when switching
-        const updateChannelInfo = () => {
-            const ch = getSavedChannels().find(c => c.id === getActiveChannelId());
-            channelInfo.textContent = `📡 ${ch?.name || '未配置'} / ${config.model || '未选择'}`;
-        };
-
-        // Channel quick switch
-        channelQuick.onchange = () => {
-            const channelId = channelQuick.value;
-            if (channelId) {
-                setActiveChannel(channelId);
-                // Update model dropdown with new channel's models
-                modelQuick.innerHTML = (config.modelList || []).map(m =>
-                    `<option value="${m}" ${m === config.model ? 'selected' : ''}>${m}</option>`
-                ).join('') || '<option value="">无可用模型</option>';
-                updateChannelInfo();
-            }
-        };
-
-        // Model quick switch
-        modelQuick.onchange = () => {
-            config.model = modelQuick.value;
-            GM_setValue('config', config);
-            // Update active channel's model too
-            const activeId = getActiveChannelId();
-            if (activeId) {
-                const channels = getSavedChannels();
-                const idx = channels.findIndex(c => c.id === activeId);
-                if (idx >= 0) {
-                    channels[idx].model = config.model;
-                    GM_setValue('savedChannels', channels);
-                }
-            }
-            updateChannelInfo();
-        };
-
-        // Settings button
-        settingsBtn.onclick = () => {
-            panel.remove();
-            createSettingsModal();
-        };
-
-        // --- Domain Detection and Auto-Style ---
-        const domainLabel = panel.querySelector('.x-ai-domain-label');
-        const domainStatus = panel.querySelector('.x-ai-domain-status');
-        const domainHint = panel.querySelector('.x-ai-domain-hint');
-        const domainHintName = panel.querySelector('.x-ai-domain-hint-name');
-        let currentDomain = 'general';
-
-        // Function to update chip selection
-        const selectChip = (optionName, value) => {
-            const chipGroup = panel.querySelector(`.x-ai-chips[data-option="${optionName}"]`);
-            if (!chipGroup) return;
-            chipGroup.querySelectorAll('.x-ai-chip').forEach(c => c.classList.remove('active'));
-            const targetChip = chipGroup.querySelector(`.x-ai-chip[data-value="${value}"]`);
-            if (targetChip) {
-                targetChip.classList.add('active');
-            }
-        };
-
-        // Apply domain style to UI
-        const applyDomainStyle = (domainId) => {
-            const domainStyle = getDomainStyle(domainId);
-            selectChip('style', domainStyle.style);
-            selectChip('strategy', domainStyle.strategy);
-            selectChip('length', domainStyle.length);
-
-            // Show hint
-            const domain = getDomainById(domainId);
-            domainHintName.textContent = domain.name;
-            domainHint.style.display = domainId !== 'general' ? 'block' : 'none';
-        };
-
-        // Detect domain function
-        const detectDomain = async (forceAI = false) => {
-            domainLabel.textContent = '检测中...';
-            domainLabel.style.background = 'rgba(29, 155, 240, 0.15)';
-            domainStatus.textContent = '';
-
-            // Check cache first
-            const cachedDomain = getCachedDomain(tweetText);
-            if (cachedDomain && !forceAI) {
-                currentDomain = cachedDomain;
-                const domain = getDomainById(cachedDomain);
-                domainLabel.textContent = domain.name;
-                domainLabel.style.background = 'rgba(74, 222, 128, 0.15)';
-                domainLabel.style.color = '#4ade80';
-                domainStatus.textContent = '(缓存)';
-                applyDomainStyle(cachedDomain);
-                return cachedDomain;
-            }
-
-            try {
-                const detectedDomain = await classifyTweetDomain(tweetText, forceAI);
-                currentDomain = detectedDomain;
-                setCachedDomain(tweetText, detectedDomain);
-
-                const domain = getDomainById(detectedDomain);
-                domainLabel.textContent = domain.name;
-                domainLabel.style.background = 'rgba(74, 222, 128, 0.15)';
-                domainLabel.style.color = '#4ade80';
-
-                // Show detection method
-                const wasKeyword = classifyByKeywords(tweetText) !== null;
-                domainStatus.textContent = wasKeyword && !forceAI ? '(关键词)' : '(AI)';
-
-                // Apply domain style
-                applyDomainStyle(detectedDomain);
-                return detectedDomain;
-            } catch (e) {
-                console.error('Domain detection error:', e);
-                domainLabel.textContent = '💬 通用';
-                domainLabel.style.background = 'rgba(136, 136, 136, 0.15)';
-                domainLabel.style.color = '#888';
-                domainStatus.textContent = '(默认)';
-                currentDomain = 'general';
-                return 'general';
-            }
-        };
-
-        // Click to re-detect with AI
-        domainLabel.onclick = () => detectDomain(true);
-
-        // Auto-detect domain on panel open
-        detectDomain(false);
-
-
+        // Load cached replies for this tweet into History tab
         const cached = getCachedReplies(tweetText);
         if (cached && cached.replies && cached.replies.length > 0) {
             historyEmpty.style.display = 'none';
@@ -1854,7 +1368,7 @@
             resultsDiv.style.display = 'none';
 
             addGenLog('开始生成回复...', 'action');
-            addGenLog(`配置: ${count}条 | ${length}长度 | ${style}风格 | 领域: ${getDomainById(currentDomain).name}`, 'info');
+            addGenLog(`配置: ${count}条 | ${length}长度 | ${style}风格`, 'info');
 
             if (tweetImages.length > 0) {
                 addGenLog(`检测到 ${tweetImages.length} 张图片，将使用视觉模型`, 'info');
@@ -1884,7 +1398,7 @@
                     addGenLog(`完整 URL: ${logUrl}`, 'info');
 
                     replies = await generateMultipleRepliesStream(
-                        tweetText, style, lang, count, length, strategy, analysisResult, tweetImages, currentDomain,
+                        tweetText, style, lang, count, length, strategy, analysisResult, tweetImages,
                         (content) => {
                             streamPreview.innerHTML = content.replace(/\n/g, '<br>') + '<span class="x-ai-stream-cursor" style="background: #1d9bf0; animation: x-ai-blink 1s infinite;">▊</span>';
                             streamPreview.scrollTop = streamPreview.scrollHeight;
@@ -1894,14 +1408,14 @@
                     addGenLog(`流式传输失败: ${streamError}`, 'error');
                     addGenLog(`切换到普通模式...`, 'warn');
                     streamPreview.innerHTML = '<span style="color: #888;">正在使用普通模式生成...</span>';
-                    replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages, currentDomain);
+                    replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages);
                 }
             } else {
                 // Normal mode
                 replyList.innerHTML = '<div style="padding: 15px; text-align: center; color: #888;"><div class="x-ai-spinner" style="display: inline-block; margin-bottom: 8px;"></div><div>正在生成...</div></div>';
                 addGenLog(`调用 AI API (${config.requestFormat}/${config.model})...`, 'action');
                 addGenLog(`API 地址: ${config.apiBaseUrl}`, 'info');
-                replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages, currentDomain);
+                replies = await generateMultipleReplies(tweetText, style, lang, count, length, strategy, analysisResult, tweetImages);
             }
 
             try {
@@ -1988,13 +1502,8 @@
         regenerateBtn.onclick = doGenerate;
     }
 
-    /* =========================================================================
-     * MODULE 11: API REQUESTS
-     * =========================================================================
-     * AI API calls for reply generation, streaming, and translation
-     * ========================================================================= */
-
-    async function generateMultipleReplies(tweetContent, style, lang, count, length = 'medium', strategy = 'default', analysisResult = null, images = [], domain = null) {
+    // Multi-reply generation with optional image support
+    async function generateMultipleReplies(tweetContent, style, lang, count, length = 'medium', strategy = 'default', analysisResult = null, images = []) {
         if (!config.apiKey) {
             throw new Error('请先在设置中配置 API Key');
         }
@@ -2050,29 +1559,12 @@
         const needsTranslation = lang !== 'zh';
         const translationNote = needsTranslation ? '\n如果回复语言不是中文，请在每条回复后附加中文翻译，格式为：\n回复内容\n[翻译] 中文翻译' : '';
 
-        // Domain context for more relevant replies
-        let domainContext = '';
-        if (domain && domain !== 'general') {
-            const domainInfo = getDomainById(domain);
-            const domainGuidance = {
-                ai: '请展现对AI技术的理解，可以提及相关技术概念、产品或趋势。',
-                emotion: '请展现同理心和情感共鸣，语气要给人温暖感。',
-                politics: '保持客观理性，避免过于极端的立场，但可以有自己的观点。',
-                tech: '可以提及具体的产品功能、使用体验或行业趋势。',
-                finance: '可以提及市场分析、投资观点，但避免不当投资建议。',
-                entertainment: '保持轻松有趣，可以表达对明星/作品的喜爱或看法。',
-                sports: '展现对运动/比赛的热情，可以评价表现或预测结果。',
-                food: '展现对美食的欣赏，可以分享味道感受或推荐。'
-            };
-            domainContext = `\n\n这是一条关于【${domainInfo.name}】领域的推文。${domainGuidance[domain] || ''}`;
-        }
-
         const promptSystem = `你是一个社交媒体高手，擅长写出吸引人的回复。
 风格要求：${styleMap[style] || styleMap.engage}
 语言要求：${langMap[lang] || langMap.auto}
 字数要求：${lengthMap[length] || lengthMap.medium}
 回复策略：${strategyMap[strategy] || strategyMap.default}
-回复不要像机器人，要有个性和真实感。${domainContext}${learnedPatterns}${analysisContext}${imageNote}${translationNote}`;
+回复不要像机器人，要有个性和真实感。${learnedPatterns}${analysisContext}${imageNote}${translationNote}`;
 
         const promptUser = `请为以下推文生成 ${count} 条不同的回复，每条回复用 --- 分隔：
 
@@ -2261,7 +1753,7 @@
     }
 
     // Streaming generation with real-time updates
-    async function generateMultipleRepliesStream(tweetContent, style, lang, count, length, strategy, analysisResult, images, domain, onProgress) {
+    async function generateMultipleRepliesStream(tweetContent, style, lang, count, length, strategy, analysisResult, images, onProgress) {
         if (!config.apiKey) {
             throw new Error('请先在设置中配置 API Key');
         }
@@ -2308,19 +1800,12 @@
         const needsTranslation = lang !== 'zh';
         const translationNote = needsTranslation ? '\n如果回复语言不是中文，请在每条回复后附加中文翻译，格式为：\n回复内容\n[翻译] 中文翻译' : '';
 
-        // Domain context for streaming
-        let domainContext = '';
-        if (domain && domain !== 'general') {
-            const domainInfo = getDomainById(domain);
-            domainContext = `\n\n这是一条关于【${domainInfo.name}】领域的推文，请确保回复与该领域相关。`;
-        }
-
         const promptSystem = `你是一个社交媒体高手，擅长写出吸引人的回复。
 风格要求：${styleMap[style] || styleMap.engage}
 语言要求：${langMap[lang] || langMap.auto}
 字数要求：${lengthMap[length] || lengthMap.medium}
 回复策略：${strategyMap[strategy] || strategyMap.default}
-回复不要像机器人，要有个性和真实感。${domainContext}${analysisContext}${imageNote}${translationNote}`;
+回复不要像机器人，要有个性和真实感。${analysisContext}${imageNote}${translationNote}`;
 
         const promptUser = `请为以下推文生成 ${count} 条不同的回复，每条回复用 --- 分隔：
 
@@ -2626,12 +2111,7 @@
         });
     }
 
-    /* =========================================================================
-     * MODULE 12: EDITOR OPERATIONS
-     * =========================================================================
-     * Insert text into reply editor, click send, and learning
-     * ========================================================================= */
-
+    // 3. Insert Text into X Editor
     async function insertTextIntoEditor(text) {
         // Wait for editor to appear
         let editor = document.querySelector('div[data-testid="tweetTextarea_0"]'); // Reply modal or inline
@@ -2729,12 +2209,7 @@
         }
     }, true);
 
-    /* =========================================================================
-     * MODULE 13: INITIALIZATION
-     * =========================================================================
-     * Main interaction flow, button injection, and mutation observer
-     * ========================================================================= */
-
+    // --- Interaction Flow ---
     async function handleAiClick(tweetArticle, btnElement) {
         // Clear previous errors
         const prevError = tweetArticle.querySelector('.x-ai-error');
