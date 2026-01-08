@@ -315,7 +315,12 @@
                     </div>
                 </div>
                 
-                <div style="display: flex; gap: 6px;">
+                <div id="ai-domain-summary-area" style="margin-top: 8px; padding: 8px; background: #1a1a1a; border-radius: 6px; display: none;">
+                    <div style="font-size: 10px; color: #888; margin-bottom: 4px;">📝 风格总结 (<span id="ai-domain-history-count">0</span> 条历史)</div>
+                    <div id="ai-domain-summary-text" style="font-size: 11px; color: #4ade80; line-height: 1.4;"></div>
+                </div>
+                
+                <div style="display: flex; gap: 6px; margin-top: 8px;">
                     <button id="ai-domain-save" style="flex: 1; padding: 6px; background: #1d9bf0; color: #fff; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">保存领域设置</button>
                     <button id="ai-domain-reset" style="padding: 6px 10px; background: transparent; color: #888; border: 1px solid #444; border-radius: 4px; font-size: 11px; cursor: pointer;">重置</button>
                 </div>
@@ -426,14 +431,29 @@
         const domainLengthSelect = document.getElementById('ai-domain-length');
         const domainSaveBtn = document.getElementById('ai-domain-save');
         const domainResetBtn = document.getElementById('ai-domain-reset');
+        const domainSummaryArea = document.getElementById('ai-domain-summary-area');
+        const domainHistoryCount = document.getElementById('ai-domain-history-count');
+        const domainSummaryText = document.getElementById('ai-domain-summary-text');
 
-        // Load current domain settings when domain changes
+        // Load current domain settings and summary status when domain changes
         const loadDomainSettings = () => {
             const domainId = domainSelect.value;
             const style = getDomainStyle(domainId);
             domainStyleSelect.value = style.style || 'engage';
             domainStrategySelect.value = style.strategy || 'default';
             domainLengthSelect.value = style.length || 'medium';
+
+            // Update summary display
+            const status = getSummaryStatus(domainId);
+            domainHistoryCount.textContent = status.historyCount;
+            if (status.hasSummary) {
+                domainSummaryArea.style.display = 'block';
+                domainSummaryText.textContent = status.summary;
+            } else {
+                domainSummaryArea.style.display = status.historyCount > 0 ? 'block' : 'none';
+                domainSummaryText.textContent = status.historyCount > 0 ? '暂无总结（需 3+ 条编辑过的回复）' : '';
+                domainSummaryText.style.color = '#888';
+            }
         };
 
         domainSelect.onchange = loadDomainSettings;
@@ -834,28 +854,174 @@
         { id: 'ko', name: '🇰🇷 한국어' }
     ];
 
-    // --- Learning Memory System ---
-    let replyHistory = GM_getValue('replyHistory', []);
-    const MAX_HISTORY = 50;
+    // --- Learning Memory System (Domain-Specific) ---
+    const MAX_HISTORY_PER_DOMAIN = 50;
+    const SUMMARY_THRESHOLD = 5; // Trigger summary every 5 new items
 
-    function saveReplyToHistory(original, final, tweetContext) {
-        replyHistory.unshift({
+    // Migrate old format to new domain-specific format
+    function migrateOldHistory() {
+        const oldHistory = GM_getValue('replyHistory', null);
+        if (oldHistory && Array.isArray(oldHistory) && oldHistory.length > 0) {
+            // Migrate to 'general' domain
+            let newHistory = GM_getValue('replyHistoryByDomain', {});
+            if (!newHistory.general) newHistory.general = [];
+            newHistory.general = [...oldHistory.slice(0, MAX_HISTORY_PER_DOMAIN), ...newHistory.general].slice(0, MAX_HISTORY_PER_DOMAIN);
+            GM_setValue('replyHistoryByDomain', newHistory);
+            // Clear old format
+            GM_setValue('replyHistory', []);
+            console.log('[X-AI-Reply] Migrated', oldHistory.length, 'history items to general domain');
+        }
+    }
+    migrateOldHistory();
+
+    // Domain-specific history storage
+    let replyHistoryByDomain = GM_getValue('replyHistoryByDomain', {});
+    let historySummaryByDomain = GM_getValue('historySummaryByDomain', {});
+
+    function getHistoryForDomain(domain) {
+        return replyHistoryByDomain[domain] || [];
+    }
+
+    function saveReplyToHistory(original, final, tweetContext, domain = 'general') {
+        if (!replyHistoryByDomain[domain]) {
+            replyHistoryByDomain[domain] = [];
+        }
+
+        const history = replyHistoryByDomain[domain];
+        const prevLength = history.length;
+
+        history.unshift({
             original,
             final,
             tweetContext: tweetContext.substring(0, 100),
             timestamp: Date.now()
         });
-        if (replyHistory.length > MAX_HISTORY) {
-            replyHistory = replyHistory.slice(0, MAX_HISTORY);
+
+        if (history.length > MAX_HISTORY_PER_DOMAIN) {
+            history.length = MAX_HISTORY_PER_DOMAIN;
         }
-        GM_setValue('replyHistory', replyHistory);
+
+        replyHistoryByDomain[domain] = history;
+        GM_setValue('replyHistoryByDomain', replyHistoryByDomain);
+
+        // Check if we should trigger summary update
+        const summaryData = historySummaryByDomain[domain];
+        const itemsSinceSummary = history.length - (summaryData?.historyCount || 0);
+        if (itemsSinceSummary >= SUMMARY_THRESHOLD) {
+            // Auto-trigger summary in background (non-blocking)
+            summarizeDomainHistory(domain).catch(e => console.error('Summary error:', e));
+        }
     }
 
-    function getLearnedPatterns() {
-        if (replyHistory.length < 3) return '';
+    // AI-powered history summarization
+    async function summarizeDomainHistory(domain) {
+        const history = getHistoryForDomain(domain);
+        if (history.length < 3) return null;
 
-        // Analyze user's editing patterns
-        const editedReplies = replyHistory
+        const editedReplies = history
+            .filter(h => h.final && h.final !== h.original)
+            .slice(0, 10)
+            .map(h => h.final);
+
+        if (editedReplies.length < 2) return null;
+
+        const domainInfo = getDomainById(domain);
+        const promptSystem = `你是一个风格分析专家。请分析用户在${domainInfo.name}领域的回复风格，总结为2-3句话的风格描述。
+描述应该包括：语气特点、常用表达方式、情感倾向等。不要列举具体回复，只给出总结性描述。`;
+
+        const promptUser = `用户的历史回复样本：
+${editedReplies.map((r, i) => `${i + 1}. "${r}"`).join('\n')}
+
+请用2-3句话总结这个用户的回复风格：`;
+
+        let url = "";
+        let requestData = {};
+        let headers = { "Content-Type": "application/json" };
+
+        if (config.requestFormat === 'anthropic') {
+            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/messages`;
+            headers["x-api-key"] = config.apiKey;
+            headers["anthropic-version"] = "2023-06-01";
+            requestData = {
+                model: config.model,
+                max_tokens: 200,
+                messages: [{ role: "user", content: promptSystem + "\n\n" + promptUser }]
+            };
+        } else if (config.requestFormat === 'gemini') {
+            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+            requestData = {
+                contents: [{ parts: [{ text: promptSystem + "\n\n" + promptUser }] }]
+            };
+        } else {
+            url = `${config.apiBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+            headers["Authorization"] = `Bearer ${config.apiKey}`;
+            requestData = {
+                model: config.model,
+                messages: [
+                    { role: "system", content: promptSystem },
+                    { role: "user", content: promptUser }
+                ],
+                temperature: 0.5,
+                max_tokens: 200
+            };
+        }
+
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: "POST",
+                url: url,
+                headers: headers,
+                data: JSON.stringify(requestData),
+                onload: function (response) {
+                    if (response.status >= 200 && response.status < 300) {
+                        try {
+                            const data = JSON.parse(response.responseText);
+                            let content = "";
+                            if (config.requestFormat === 'anthropic') {
+                                content = data.content?.[0]?.text || "";
+                            } else if (config.requestFormat === 'gemini') {
+                                content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                            } else {
+                                const choices = data.data?.choices || data.choices;
+                                content = choices?.[0]?.message?.content || "";
+                            }
+
+                            if (content) {
+                                historySummaryByDomain[domain] = {
+                                    summary: content.trim(),
+                                    lastUpdated: Date.now(),
+                                    historyCount: history.length
+                                };
+                                GM_setValue('historySummaryByDomain', historySummaryByDomain);
+                                console.log(`[X-AI-Reply] Updated style summary for ${domain}:`, content.trim());
+                            }
+                            resolve(content.trim());
+                        } catch (e) {
+                            resolve(null);
+                        }
+                    } else {
+                        resolve(null);
+                    }
+                },
+                onerror: () => resolve(null)
+            });
+        });
+    }
+
+    // Get learned patterns (uses summary if available, falls back to raw samples)
+    function getLearnedPatterns(domain = 'general') {
+        // Try to use AI summary first
+        const summaryData = historySummaryByDomain[domain];
+        if (summaryData?.summary) {
+            const domainInfo = getDomainById(domain);
+            return `\n\n用户在${domainInfo.name}领域的回复风格特点：${summaryData.summary}`;
+        }
+
+        // Fall back to raw samples
+        const history = getHistoryForDomain(domain);
+        if (history.length < 3) return '';
+
+        const editedReplies = history
             .filter(h => h.final && h.final !== h.original)
             .slice(0, 10)
             .map(h => h.final);
@@ -863,6 +1029,21 @@
         if (editedReplies.length === 0) return '';
 
         return `\n\n用户的历史回复风格参考（请模仿这种风格）:\n${editedReplies.slice(0, 3).map((r, i) => `${i + 1}. "${r}"`).join('\n')}`;
+    }
+
+    // Get summary status for display
+    function getSummaryStatus(domain) {
+        const summaryData = historySummaryByDomain[domain];
+        const history = getHistoryForDomain(domain);
+        if (!summaryData?.summary) {
+            return { hasSummary: false, historyCount: history.length };
+        }
+        return {
+            hasSummary: true,
+            summary: summaryData.summary,
+            lastUpdated: summaryData.lastUpdated,
+            historyCount: history.length
+        };
     }
 
     // --- Generation Settings Persistence ---
@@ -1357,10 +1538,13 @@
                         <button class="x-ai-inline-close" style="background: none; border: none; color: #888; font-size: 18px; cursor: pointer; padding: 0; line-height: 1;">×</button>
                     </div>
                 </div>
-                <!-- Domain display area -->
-                <div class="x-ai-domain-display" style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                <!-- Domain selector area -->
+                <div class="x-ai-domain-display" style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <span style="font-size: 11px; color: #888;">🏷️ 领域:</span>
-                    <span class="x-ai-domain-label" style="font-size: 11px; color: #1d9bf0; background: rgba(29, 155, 240, 0.15); padding: 3px 8px; border-radius: 12px; cursor: pointer;" title="点击重新检测">检测中...</span>
+                    <select class="x-ai-domain-select" style="padding: 3px 8px; background: #222; border: 1px solid #444; color: #e7e9ea; border-radius: 6px; font-size: 11px; cursor: pointer;">
+                        <option value="auto">🔄 自动检测</option>
+                        ${DOMAIN_CATEGORIES.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
+                    </select>
                     <span class="x-ai-domain-status" style="font-size: 10px; color: #666;"></span>
                 </div>
                 <!-- Expandable channel/model selector (hidden by default) -->
@@ -1545,11 +1729,12 @@
         };
 
         // --- Domain Detection and Auto-Style ---
-        const domainLabel = panel.querySelector('.x-ai-domain-label');
+        const domainSelect = panel.querySelector('.x-ai-domain-select');
         const domainStatus = panel.querySelector('.x-ai-domain-status');
         const domainHint = panel.querySelector('.x-ai-domain-hint');
         const domainHintName = panel.querySelector('.x-ai-domain-hint-name');
         let currentDomain = 'general';
+        let isAutoMode = true;
 
         // Function to update chip selection
         const selectChip = (optionName, value) => {
@@ -1575,58 +1760,58 @@
             domainHint.style.display = domainId !== 'general' ? 'block' : 'none';
         };
 
-        // Detect domain function
-        const detectDomain = async (forceAI = false) => {
-            domainLabel.textContent = '检测中...';
-            domainLabel.style.background = 'rgba(29, 155, 240, 0.15)';
-            domainStatus.textContent = '';
+        // Auto-detect domain function
+        const autoDetectDomain = async () => {
+            domainStatus.textContent = '检测中...';
+            domainStatus.style.color = '#1d9bf0';
 
             // Check cache first
             const cachedDomain = getCachedDomain(tweetText);
-            if (cachedDomain && !forceAI) {
+            if (cachedDomain) {
                 currentDomain = cachedDomain;
-                const domain = getDomainById(cachedDomain);
-                domainLabel.textContent = domain.name;
-                domainLabel.style.background = 'rgba(74, 222, 128, 0.15)';
-                domainLabel.style.color = '#4ade80';
-                domainStatus.textContent = '(缓存)';
+                domainStatus.textContent = `→ ${getDomainById(cachedDomain).name} (缓存)`;
+                domainStatus.style.color = '#4ade80';
                 applyDomainStyle(cachedDomain);
                 return cachedDomain;
             }
 
             try {
-                const detectedDomain = await classifyTweetDomain(tweetText, forceAI);
+                const detectedDomain = await classifyTweetDomain(tweetText, false);
                 currentDomain = detectedDomain;
                 setCachedDomain(tweetText, detectedDomain);
 
-                const domain = getDomainById(detectedDomain);
-                domainLabel.textContent = domain.name;
-                domainLabel.style.background = 'rgba(74, 222, 128, 0.15)';
-                domainLabel.style.color = '#4ade80';
-
-                // Show detection method
                 const wasKeyword = classifyByKeywords(tweetText) !== null;
-                domainStatus.textContent = wasKeyword && !forceAI ? '(关键词)' : '(AI)';
+                domainStatus.textContent = `→ ${getDomainById(detectedDomain).name} (${wasKeyword ? '关键词' : 'AI'})`;
+                domainStatus.style.color = '#4ade80';
 
-                // Apply domain style
                 applyDomainStyle(detectedDomain);
                 return detectedDomain;
             } catch (e) {
                 console.error('Domain detection error:', e);
-                domainLabel.textContent = '💬 通用';
-                domainLabel.style.background = 'rgba(136, 136, 136, 0.15)';
-                domainLabel.style.color = '#888';
-                domainStatus.textContent = '(默认)';
                 currentDomain = 'general';
+                domainStatus.textContent = '→ 通用 (默认)';
+                domainStatus.style.color = '#888';
                 return 'general';
             }
         };
 
-        // Click to re-detect with AI
-        domainLabel.onclick = () => detectDomain(true);
+        // Handle domain select change
+        domainSelect.onchange = () => {
+            const selected = domainSelect.value;
+            if (selected === 'auto') {
+                isAutoMode = true;
+                autoDetectDomain();
+            } else {
+                isAutoMode = false;
+                currentDomain = selected;
+                domainStatus.textContent = '(手动选择)';
+                domainStatus.style.color = '#888';
+                applyDomainStyle(selected);
+            }
+        };
 
-        // Auto-detect domain on panel open
-        detectDomain(false);
+        // Auto-detect on panel open (default mode)
+        autoDetectDomain();
 
 
         const cached = getCachedReplies(tweetText);
@@ -1657,7 +1842,7 @@
                         replyBtn.click();
                         await new Promise(r => setTimeout(r, 500));
                         await insertTextIntoEditor(selectedReply);
-                        window._pendingReply = { original: selectedReply, tweetContext: tweetText };
+                        window._pendingReply = { original: selectedReply, tweetContext: tweetText, domain: currentDomain };
                     }
                 };
             });
@@ -1959,7 +2144,8 @@
                                 // Record for learning
                                 window._pendingReply = {
                                     original: selectedReply,
-                                    tweetContext: tweetText
+                                    tweetContext: tweetText,
+                                    domain: currentDomain
                                 };
                             }
                         };
@@ -2029,7 +2215,7 @@
             challenge: '提出不同意见，友善地挑战主流观点'
         };
 
-        const learnedPatterns = getLearnedPatterns();
+        const learnedPatterns = getLearnedPatterns(domain);
 
         // Build context from analysis
         let analysisContext = '';
@@ -2315,12 +2501,14 @@
             domainContext = `\n\n这是一条关于【${domainInfo.name}】领域的推文，请确保回复与该领域相关。`;
         }
 
+        const learnedPatterns = getLearnedPatterns(domain);
+
         const promptSystem = `你是一个社交媒体高手，擅长写出吸引人的回复。
 风格要求：${styleMap[style] || styleMap.engage}
 语言要求：${langMap[lang] || langMap.auto}
 字数要求：${lengthMap[length] || lengthMap.medium}
 回复策略：${strategyMap[strategy] || strategyMap.default}
-回复不要像机器人，要有个性和真实感。${domainContext}${analysisContext}${imageNote}${translationNote}`;
+回复不要像机器人，要有个性和真实感。${domainContext}${learnedPatterns}${analysisContext}${imageNote}${translationNote}`;
 
         const promptUser = `请为以下推文生成 ${count} 条不同的回复，每条回复用 --- 分隔：
 
@@ -2703,7 +2891,8 @@
                     saveReplyToHistory(
                         window._pendingReply.original,
                         finalText,
-                        window._pendingReply.tweetContext
+                        window._pendingReply.tweetContext,
+                        window._pendingReply.domain || 'general'
                     );
                 }
                 delete window._pendingReply;
@@ -2722,7 +2911,8 @@
                 saveReplyToHistory(
                     window._pendingReply.original,
                     finalText,
-                    window._pendingReply.tweetContext
+                    window._pendingReply.tweetContext,
+                    window._pendingReply.domain || 'general'
                 );
             }
             delete window._pendingReply;
